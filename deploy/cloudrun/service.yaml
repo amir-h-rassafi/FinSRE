@@ -1,22 +1,23 @@
-apiVersion: serving.knative.dev/v1
-kind: Service
+apiVersion: run.googleapis.com/v1
+kind: Job
 metadata:
   name: finsre
 spec:
   template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/minScale: "0"
     spec:
-      serviceAccountName: finsre-runtime
-      containers:
-        - image: REPLACE_WITH_IMAGE
-          ports:
-            - containerPort: 8080
-          env:
-            - name: FINSRE_ENVIRONMENT
-              value: cloudrun
-            - name: FINSRE_GCP_BILLING_TABLE
-              value: REPLACE_WITH_PROJECT.DATASET.TABLE
-            - name: FINSRE_GCP_BILLING_PROJECT
-              value: REPLACE_WITH_PROJECT
+      template:
+        spec:
+          serviceAccountName: finsre-runtime
+          maxRetries: 1
+          containers:
+            - image: REPLACE_WITH_IMAGE
+              env:
+                - name: FINSRE_ENVIRONMENT
+                  value: cloudrun
+                - name: FINSRE_GCP_BILLING_ACCOUNT
+                  value: REPLACE_WITH_BILLING_ACCOUNT_ID
+                - name: FINSRE_GCP_BILLING_CURRENCY
+                  value: USD
+              args:
+                - connectors
+                - list

@@ -11,12 +11,17 @@ serviceAccount:
   annotations: {}
 
 service:
+  enabled: false
   type: ClusterIP
   port: 80
 
 env:
   FINSRE_ENVIRONMENT: kubernetes
-  FINSRE_GCP_BILLING_TABLE: ""
-  FINSRE_GCP_BILLING_PROJECT: ""
+  FINSRE_GCP_BILLING_ACCOUNT: ""
+  FINSRE_GCP_BILLING_CURRENCY: "USD"
+
+args:
+  - connectors
+  - list
 
 resources: {}

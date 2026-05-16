@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from finsre.models import ConnectorDescriptor, CostLineItem
+from finsre.models import ConnectorDescriptor, CostLineItem, TimePeriod
 
 
 class Connector(ABC):
@@ -11,9 +11,9 @@ class Connector(ABC):
     def describe(self) -> ConnectorDescriptor:
         """Return metadata and readiness for this connector."""
 
-    def preview_query(self) -> str | None:
-        """Return a source query when the connector supports query preview."""
-        return None
+    def preview_api_calls(self, period: TimePeriod) -> list[str]:
+        """Return source API calls when the connector supports call preview."""
+        return []
 
     def collect_costs(self) -> Iterable[CostLineItem]:
         """Collect normalized cost rows.

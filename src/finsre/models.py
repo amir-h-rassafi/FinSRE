@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -26,6 +26,24 @@ class ConnectorDescriptor:
     status: ConnectorStatus
     capabilities: tuple[str, ...]
     details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TimePeriod:
+    start_date: date
+    end_date: date
+
+    def __post_init__(self) -> None:
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date.")
+
+    @property
+    def start_time_rfc3339(self) -> str:
+        return datetime.combine(self.start_date, time.min, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    @property
+    def end_time_rfc3339(self) -> str:
+        return datetime.combine(self.end_date, time.min, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)

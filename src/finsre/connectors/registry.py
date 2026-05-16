@@ -21,8 +21,8 @@ def build_default_registry(settings: Settings) -> ConnectorRegistry:
     return ConnectorRegistry(
         connectors=[
             GcpBillingConnector(
-                billing_table=settings.gcp_billing_table,
-                billing_project=settings.gcp_billing_project,
+                billing_account=settings.gcp_billing_account,
+                currency_code=settings.gcp_billing_currency,
             )
         ]
     )

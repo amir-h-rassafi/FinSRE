@@ -22,21 +22,12 @@ spec:
         - name: finsre
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: 8080
+          args:
+{{ toYaml .Values.args | indent 12 }}
           env:
 {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
 {{- end }}
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
           resources:
 {{ toYaml .Values.resources | indent 12 }}

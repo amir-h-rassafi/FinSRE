@@ -26,7 +26,8 @@ FinSRE should support multiple hooks and connectors. Different organizations wil
 
 ### Initial GCP Sources
 
-- Cloud Billing export to BigQuery
+- Cloud Billing Account API for account and project billing relationships
+- Cloud Billing Catalog API for services, SKUs, and pricing over a requested period
 - Cloud Asset Inventory
 - Cloud Monitoring metrics
 - Cloud Logging
@@ -56,7 +57,8 @@ The product should explicitly model how much data is available. This avoids pret
 | Level | Available Data | What FinSRE Can Do |
 | --- | --- | --- |
 | 0 | Manual import or static billing reports | Basic summaries and high-level savings ideas |
-| 1 | Billing export | Cost trends, SKU analysis, project/service attribution |
+| 1 | Billing APIs and account metadata | Billing account discovery, project billing relationships, SKU and pricing context |
+| 1.5 | Billing export or customer cost feed | Cost trends, SKU analysis, project/service attribution |
 | 2 | Billing plus cloud inventory | Better ownership, unused resources, rightsizing candidates |
 | 3 | Billing plus monitoring | Utilization-aware optimization and anomaly context |
 | 4 | Billing plus logs/traces/deployments | Change correlation and stronger root-cause hypotheses |
@@ -103,8 +105,9 @@ flowchart LR
     end
 
     subgraph Delivery[Delivery Layer]
-        API[API Service]
-        UI[Operations UI]
+        CLI[CLI Agent]
+        API[Future API Service]
+        UI[Future Operations UI]
         TASK[Task / Ticket Integrations]
         AUTO[Optional Automation]
     end
@@ -134,11 +137,12 @@ flowchart LR
     CC --> STATE
     CE --> STATE
     RP --> STATE
-    STATE --> API
-    EVID --> API
-    API --> UI
-    API --> TASK
-    API --> AUTO
+    STATE --> CLI
+    EVID --> CLI
+    CLI --> TASK
+    CLI --> AUTO
+    STATE -.-> API
+    API -.-> UI
 ```
 
 ```text
@@ -168,11 +172,13 @@ Connectors
 The first code shard is intentionally narrow:
 
 - Abstract connector interfaces and normalized cost models.
-- A GCP Billing Export connector that builds a daily cost query for BigQuery.
-- A small API surface to inspect registered connectors and preview the billing query.
-- Deployment assets for local containers, Cloud Run-style containers, and Helm-based Kubernetes installs.
+- A GCP Cloud Billing API connector for account discovery, project billing relationships, service catalog, and SKU pricing over an explicit period.
+- A small CLI surface to inspect registered connectors and preview the GCP API calls for a period.
+- Deployment assets for local containers and scheduled/agent-style Cloud Run or Helm-based Kubernetes installs.
 
-This first slice does not require an in-cluster agent. It assumes FinSRE runs as a service and receives cloud access through workload identity, service account credentials, or an equivalent cloud-native identity. A lightweight in-cloud collector can be added later if organizations want data collection to stay inside their own boundary.
+This first slice is a CLI agent. It can run locally, in CI, as a scheduled job, or as a containerized command in Cloud Run Jobs or Kubernetes CronJobs. It receives cloud access through workload identity, service account credentials, or an equivalent cloud-native identity. A long-running API service can be added later when the UI and state store need it.
+
+Important limitation: the public Cloud Billing Account and Catalog APIs do not provide detailed historical usage-cost line items. They can tell us billing accounts, project billing associations, public services, SKUs, and pricing versions. Actual historical spend attribution will need a later source such as Billing Export, a customer-provided cost feed, or another cloud-native export.
 
 ## Agent Model
 
@@ -305,7 +311,8 @@ The first milestone should prove the product loop with a narrow but real path.
 
 ### MVP Scope
 
-- Ingest GCP Billing export from BigQuery.
+- Use the GCP Cloud Billing APIs for billing account discovery, project associations, service catalog, and SKU pricing.
+- Require explicit `start_date` and `end_date` for period-based pricing calls.
 - Ingest basic GCP project and resource inventory.
 - Build normalized cost line items and resource entities.
 - Show cost trends by project, service, SKU, region, and labels.
@@ -327,9 +334,9 @@ The first milestone should prove the product loop with a narrow but real path.
 
 This is not final, but it gives the project a starting shape.
 
-- Backend: Python service layer
+- Runtime: Python CLI agent first; API service later if needed
 - Workflow orchestration: LangGraph or a lightweight internal state machine
-- Data warehouse: BigQuery first, with an abstraction for other warehouses later
+- Cost source: API-first for the first GCP shard, with Billing Export or warehouse-backed attribution added later
 - Operational store: PostgreSQL for entities, tasks, state, and metadata
 - Search/retrieval: Postgres full text, vector search, or external search depending on scale
 - Frontend: focused operations UI for investigations, recommendations, and timelines
@@ -338,7 +345,7 @@ This is not final, but it gives the project a starting shape.
 
 ## Running the First Shard
 
-The current implementation is a small API service with one concrete connector: `gcp-billing`.
+The current implementation is a small CLI agent with one concrete connector: `gcp-billing`.
 
 ### Local Development
 
@@ -346,41 +353,46 @@ The current implementation is a small API service with one concrete connector: `
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[gcp,dev]"
-export FINSRE_GCP_BILLING_TABLE="billing-project.billing_dataset.gcp_billing_export_v1_XXXXXX"
-export FINSRE_GCP_BILLING_PROJECT="billing-project"
-uvicorn finsre.app:create_app --factory --reload
+export FINSRE_GCP_BILLING_ACCOUNT="012345-6789AB-CDEF01"
+export FINSRE_GCP_BILLING_CURRENCY="USD"
+finsre connectors list
 ```
 
-Useful endpoints:
+Useful commands:
 
-- `GET /healthz`
-- `GET /v1/connectors`
-- `GET /v1/connectors/gcp-billing/query-preview`
+- `finsre connectors list`
+- `finsre gcp billing api-preview --start-date 2026-05-01 --end-date 2026-05-16`
+- `finsre gcp billing accounts`
+- `finsre gcp billing projects`
+- `finsre gcp billing services`
+- `finsre gcp billing skus --service-name services/6F81-5844-456A --start-date 2026-05-01 --end-date 2026-05-16`
+
+GCP Catalog API pricing periods must stay within one calendar month and cannot be in the future. FinSRE treats `start_date` as inclusive and `end_date` as exclusive.
 
 ### Container
 
 ```bash
 docker build -t finsre:local .
-docker run --rm -p 8080:8080 \
-  -e FINSRE_GCP_BILLING_TABLE="billing-project.billing_dataset.gcp_billing_export_v1_XXXXXX" \
-  -e FINSRE_GCP_BILLING_PROJECT="billing-project" \
-  finsre:local
+docker run --rm \
+  -e FINSRE_GCP_BILLING_ACCOUNT="012345-6789AB-CDEF01" \
+  -e FINSRE_GCP_BILLING_CURRENCY="USD" \
+  finsre:local gcp billing api-preview --start-date 2026-05-01 --end-date 2026-05-16
 ```
 
 ### Cloud Run
 
-`deploy/cloudrun/service.yaml` is a starter Knative service manifest. The service should run with a service account that can read the configured BigQuery billing export table.
+The MVP is better suited to Cloud Run Jobs than a long-running HTTP service. `deploy/cloudrun/service.yaml` is currently a Cloud Run Job manifest. The runtime identity should have read-only Cloud Billing access for the configured billing account.
 
 ### Kubernetes / Helm
 
-`deploy/helm/finsre` is a starter chart for running the service in Kubernetes.
+`deploy/helm/finsre` is a starter chart for running the CLI agent as a containerized command. The next chart iteration should move this to a CronJob once scheduling requirements are clear.
 
 ```bash
 helm upgrade --install finsre deploy/helm/finsre \
   --set image.repository=REPLACE_WITH_IMAGE \
   --set image.tag=REPLACE_WITH_TAG \
-  --set env.FINSRE_GCP_BILLING_TABLE="billing-project.billing_dataset.gcp_billing_export_v1_XXXXXX" \
-  --set env.FINSRE_GCP_BILLING_PROJECT="billing-project"
+  --set env.FINSRE_GCP_BILLING_ACCOUNT="012345-6789AB-CDEF01" \
+  --set env.FINSRE_GCP_BILLING_CURRENCY="USD"
 ```
 
 For GKE, prefer Workload Identity so the service does not need static credentials. For non-GCP clusters, use the platform's secret manager or workload identity equivalent.
@@ -408,9 +420,10 @@ For GKE, prefer Workload Identity so the service does not need static credential
 
 ### Phase 2: GCP Billing MVP
 
-- Connect to GCP Billing export in BigQuery.
-- Normalize cost data.
-- Build project/service/SKU cost views.
+- Connect to GCP Cloud Billing APIs.
+- Discover billing accounts and project billing relationships.
+- Build service/SKU pricing views for explicit periods.
+- Add the later historical cost source needed for actual cost trends.
 - Add simple anomaly detection.
 - Create initial recommendation records.
 

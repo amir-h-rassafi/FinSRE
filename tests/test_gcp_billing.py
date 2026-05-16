@@ -1,45 +1,68 @@
 from datetime import date
-from decimal import Decimal
-from unittest import TestCase
 
 from finsre.connectors.gcp_billing import GcpBillingConnector
-from finsre.models import ConnectorStatus
+from finsre.models import ConnectorStatus, TimePeriod
 
 
-class GcpBillingConnectorTest(TestCase):
-    def test_describe_reports_missing_configuration(self) -> None:
-        connector = GcpBillingConnector(billing_table=None)
+class FakeTransport:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, str] | None]] = []
+        self.responses: list[dict[str, object]] = []
 
-        descriptor = connector.describe()
+    def get(self, path: str, params: dict[str, str] | None = None) -> dict[str, object]:
+        self.calls.append((path, params))
+        return self.responses.pop(0)
 
-        self.assertEqual(descriptor.name, "gcp-billing")
-        self.assertEqual(descriptor.status, ConnectorStatus.NEEDS_CONFIGURATION)
 
-    def test_daily_cost_query_uses_configured_table(self) -> None:
-        connector = GcpBillingConnector(billing_table="billing.dataset.export")
+def test_describe_reports_api_connector_capabilities() -> None:
+    connector = GcpBillingConnector(billing_account=None)
 
-        query = connector.daily_cost_query()
+    descriptor = connector.describe()
 
-        self.assertIn("FROM `billing.dataset.export`", query)
-        self.assertIn("SUM(cost)", query)
-        self.assertIn("net_cost", query)
+    assert descriptor.name == "gcp-billing"
+    assert descriptor.status == ConnectorStatus.CONFIGURED
+    assert descriptor.source_type == "cloud_billing_api"
+    assert "sku_pricing_by_period" in descriptor.capabilities
 
-    def test_normalize_row_accepts_billing_label_records(self) -> None:
-        connector = GcpBillingConnector(billing_table="billing.dataset.export")
 
-        item = connector.normalize_row(
-            {
-                "usage_date": "2026-05-15",
-                "project_id": "analytics-prod",
-                "service": "BigQuery",
-                "sku": "Analysis",
-                "region": "europe-west2",
-                "currency": "USD",
-                "net_cost": "12.34",
-                "labels": [{"key": "team", "value": "data"}],
-            }
-        )
+def test_preview_api_calls_include_period() -> None:
+    connector = GcpBillingConnector(billing_account="012345-6789AB-CDEF01")
 
-        self.assertEqual(item.usage_start_date, date(2026, 5, 15))
-        self.assertEqual(item.cost, Decimal("12.34"))
-        self.assertEqual(item.labels, {"team": "data"})
+    calls = connector.preview_api_calls(TimePeriod(date(2026, 5, 1), date(2026, 5, 16)))
+
+    assert "https://cloudbilling.googleapis.com/v1/billingAccounts" in calls
+    assert "billingAccounts/012345-6789AB-CDEF01/projects" in calls[2]
+    assert "startTime=2026-05-01T00%3A00%3A00Z" in calls[3]
+    assert "endTime=2026-05-16T00%3A00%3A00Z" in calls[3]
+
+
+def test_list_projects_uses_configured_billing_account() -> None:
+    transport = FakeTransport()
+    transport.responses.append({"projectBillingInfo": [{"projectId": "analytics-prod"}]})
+    connector = GcpBillingConnector(billing_account="012345-6789AB-CDEF01", transport=transport)
+
+    projects = connector.list_projects()
+
+    assert projects == [{"projectId": "analytics-prod"}]
+    assert transport.calls[0][0] == "/v1/billingAccounts/012345-6789AB-CDEF01/projects"
+
+
+def test_list_skus_for_service_uses_period_and_pagination() -> None:
+    transport = FakeTransport()
+    transport.responses.extend(
+        [
+            {"skus": [{"skuId": "sku-1"}], "nextPageToken": "next"},
+            {"skus": [{"skuId": "sku-2"}]},
+        ]
+    )
+    connector = GcpBillingConnector(transport=transport)
+    period = TimePeriod(date(2026, 5, 1), date(2026, 5, 16))
+
+    skus = connector.list_skus_for_service("6F81-5844-456A", period, "GBP")
+
+    assert skus == [{"skuId": "sku-1"}, {"skuId": "sku-2"}]
+    assert transport.calls[0][0] == "/v1/services/6F81-5844-456A/skus"
+    assert transport.calls[0][1]["startTime"] == "2026-05-01T00:00:00Z"
+    assert transport.calls[0][1]["endTime"] == "2026-05-16T00:00:00Z"
+    assert transport.calls[0][1]["currencyCode"] == "GBP"
+    assert transport.calls[1][1]["pageToken"] == "next"
