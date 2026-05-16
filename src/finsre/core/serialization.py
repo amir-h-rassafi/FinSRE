@@ -5,6 +5,9 @@ from typing import Any
 
 from finsre.core.components import ComponentManifest
 from finsre.core.events import EventEnvelope
+from finsre.discovery.probes import DiscoveryProbe
+from finsre.discovery.questions import Question
+from finsre.discovery.sku import BillingSkuSignal, SkuClassification
 from finsre.models import ApiContract, CompatibilityReport, ConnectorDescriptor
 
 
@@ -67,6 +70,48 @@ def event_to_dict(event: EventEnvelope) -> dict[str, Any]:
         "correlation_id": event.correlation_id,
         "trace_id": event.trace_id,
         "data": event.data,
+    }
+
+
+def sku_signal_to_dict(signal: BillingSkuSignal) -> dict[str, Any]:
+    return {
+        "service": signal.service,
+        "sku_id": signal.sku_id,
+        "sku_description": signal.sku_description,
+        "cost": signal.cost,
+        "currency": signal.currency,
+        "project_id": signal.project_id,
+        "usage_amount": signal.usage_amount,
+        "usage_unit": signal.usage_unit,
+        "labels": signal.labels,
+    }
+
+
+def sku_classification_to_dict(classification: SkuClassification) -> dict[str, Any]:
+    return {
+        "domain": classification.domain.value,
+        "confidence": classification.confidence,
+        "reasons": list(classification.reasons),
+        "signal": sku_signal_to_dict(classification.signal),
+    }
+
+
+def discovery_probe_to_dict(probe: DiscoveryProbe) -> dict[str, Any]:
+    return {
+        "kind": probe.kind.value,
+        "name": probe.name,
+        "reason": probe.reason,
+        "required": probe.required,
+    }
+
+
+def question_to_dict(question: Question) -> dict[str, Any]:
+    return {
+        "id": question.id,
+        "entity_id": question.entity_id,
+        "text": question.text,
+        "reason": question.reason,
+        "blocks_recommendation": question.blocks_recommendation,
     }
 
 

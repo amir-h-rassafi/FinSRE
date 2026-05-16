@@ -50,7 +50,16 @@ def test_component_catalog_lists_deployable_boundaries() -> None:
     components = build_component_catalog(Settings())
 
     names = [component.name for component in components]
-    assert names == ["gcp-billing", "agent-router", "memory-store", "tracker"]
+    assert names == [
+        "gcp-billing",
+        "asset-discovery",
+        "network-discovery",
+        "telemetry-discovery",
+        "change-discovery",
+        "agent-router",
+        "memory-store",
+        "tracker",
+    ]
     assert "cli_job" in [mode.value for mode in components[0].deploy_modes]
 
 

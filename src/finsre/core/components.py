@@ -5,6 +5,7 @@ from enum import StrEnum
 class ComponentKind(StrEnum):
     CLI = "cli"
     CONNECTOR = "connector"
+    DISCOVERY = "discovery"
     NORMALIZER = "normalizer"
     AGENT = "agent"
     MEMORY = "memory"

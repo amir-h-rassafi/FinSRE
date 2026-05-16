@@ -74,3 +74,31 @@ def test_gcp_billing_compatibility_event_outputs_event_envelope() -> None:
     assert exit_code == 0
     assert payload["type"] == "finsre.connector.compatibility.checked"
     assert payload["data"]["connector"] == "gcp-billing"
+
+
+def test_discovery_plan_sku_outputs_probes_and_questions() -> None:
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(
+            [
+                "discovery",
+                "plan-sku",
+                "--service",
+                "Compute Engine",
+                "--sku-id",
+                "egress-1",
+                "--sku-description",
+                "Inter-region Egress",
+                "--cost",
+                "42.50",
+                "--project-id",
+                "prod-api",
+            ]
+        )
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["classification"]["domain"] == "network_egress"
+    assert [probe["kind"] for probe in payload["probes"]] == ["network", "telemetry", "change"]
+    assert payload["questions"][0]["id"] == "prod-api:traffic-intent"

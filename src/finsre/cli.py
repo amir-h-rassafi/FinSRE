@@ -30,6 +30,15 @@ def build_parser() -> argparse.ArgumentParser:
     components_list = components_sub.add_parser("list", help="List component manifests")
     components_list.set_defaults(func=cli_commands.list_components)
 
+    discovery = subparsers.add_parser("discovery", help="Plan SKU-driven discovery")
+    discovery_sub = discovery.add_subparsers(dest="discovery_command", required=True)
+    classify_sku = discovery_sub.add_parser("classify-sku", help="Classify a billed SKU into a discovery domain")
+    _add_sku_signal_args(classify_sku)
+    classify_sku.set_defaults(func=cli_commands.classify_sku)
+    plan_sku = discovery_sub.add_parser("plan-sku", help="Plan discovery probes for a billed SKU")
+    _add_sku_signal_args(plan_sku)
+    plan_sku.set_defaults(func=cli_commands.plan_sku_discovery)
+
     connectors = subparsers.add_parser("connectors", help="Inspect configured connectors")
     connectors_sub = connectors.add_subparsers(dest="connectors_command", required=True)
     connectors_list = connectors_sub.add_parser("list", help="List connectors")
@@ -74,6 +83,15 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_period_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--start-date", required=True, help="Inclusive start date, YYYY-MM-DD")
     parser.add_argument("--end-date", required=True, help="Exclusive end date, YYYY-MM-DD")
+
+
+def _add_sku_signal_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--service", required=True, help="Billing service name, for example Compute Engine")
+    parser.add_argument("--sku-id", required=True, help="Provider SKU id")
+    parser.add_argument("--sku-description", required=True, help="Provider SKU description")
+    parser.add_argument("--cost", required=True, help="Observed cost for this SKU")
+    parser.add_argument("--currency", default="USD", help="Cost currency")
+    parser.add_argument("--project-id", help="Project/account id associated with the SKU")
 
 
 if __name__ == "__main__":

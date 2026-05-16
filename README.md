@@ -191,6 +191,7 @@ src/finsre/
   config.py           # Environment/config loading
   core/               # Cloud-neutral events, ports, manifests, serialization
   connectors/         # Provider connectors and connector registry
+  discovery/          # SKU classification, probe planning, context facts, questions
   agents/             # Agent contracts and router; LangGraph can plug in here
   memory/             # Memory/vector-store interfaces and early local stores
   tracker/            # Investigation and recommendation state tracking
@@ -199,6 +200,7 @@ src/finsre/
 Rules for new code:
 
 - Put cloud/provider integration logic in `connectors`.
+- Put SKU-to-probe routing and read-only context discovery in `discovery`.
 - Put durable product concepts in `core` or `models`.
 - Put agent orchestration behind `agents` so LangGraph remains replaceable.
 - Put vector, retrieval, and long-term context code behind `memory`.
@@ -237,6 +239,49 @@ Rules for keeping this light:
 - Use events at boundaries, not inside every function call.
 - Keep events as plain JSON-compatible data.
 - Version event schemas when another component depends on them.
+
+### SKU-Driven Discovery
+
+Billing usage is the first routing signal. When a service/SKU has non-zero cost, FinSRE should classify that SKU and plan only the probes that can explain it.
+
+```text
+billed SKU observed
+  -> classify SKU domain
+  -> plan read-only probes
+  -> collect context facts
+  -> ask questions only for missing intent
+  -> store facts/questions for future investigations
+```
+
+Current discovery modules:
+
+- `billing-sku-discovery`: future source of observed SKU usage rows.
+- `sku-classifier`: maps service/SKU descriptions into domains such as `network_egress`, `nat`, `load_balancer`, `bigquery`, `gke`, `logging`, `storage`, `compute`, and `sql`.
+- `probe-planner`: maps domains to read-only probes.
+- `asset-discovery`: placeholder for Cloud Asset Inventory, Resource Manager, and ownership discovery.
+- `network-discovery`: placeholder for VPC, route, NAT, LB, VPN/Interconnect, and traffic-topology discovery.
+- `telemetry-discovery`: placeholder for Monitoring, logs, and usage metric validation.
+- `change-discovery`: placeholder for audit logs, deployments, and IaC changes.
+- `context-fact-store`: stores discovered facts with source, confidence, evidence, and expiry.
+- `question-planner`: asks humans only when missing intent blocks a recommendation.
+
+Useful commands:
+
+```bash
+finsre discovery classify-sku \
+  --service "Compute Engine" \
+  --sku-id "egress-1" \
+  --sku-description "Inter-region Egress" \
+  --cost 42.50 \
+  --project-id prod-api
+
+finsre discovery plan-sku \
+  --service "Compute Engine" \
+  --sku-id "egress-1" \
+  --sku-description "Inter-region Egress" \
+  --cost 42.50 \
+  --project-id prod-api
+```
 
 ## Agent Model
 
