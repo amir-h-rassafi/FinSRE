@@ -51,3 +51,26 @@ def test_connectors_check_outputs_compatibility_report() -> None:
     assert payload[0]["status"] == "compatible"
     assert payload[0]["contract"]["provider_api"] == "cloudbilling.googleapis.com"
     assert payload[0]["contract"]["provider_api_version"] == "v1"
+
+
+def test_components_list_outputs_deployable_boundaries() -> None:
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(["components", "list"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert [component["name"] for component in payload] == ["gcp-billing", "agent-router", "memory-store", "tracker"]
+
+
+def test_gcp_billing_compatibility_event_outputs_event_envelope() -> None:
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(["gcp", "billing", "compatibility-event"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["type"] == "finsre.connector.compatibility.checked"
+    assert payload["data"]["connector"] == "gcp-billing"

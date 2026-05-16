@@ -3,6 +3,9 @@ from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from finsre.connectors.base import Connector
+from finsre.core.components import ComponentKind, ComponentManifest, DeployMode
+from finsre.core.events import EventEnvelope, EventType, new_event
+from finsre.core.serialization import compatibility_to_dict
 from finsre.models import (
     ApiContract,
     CloudProvider,
@@ -114,6 +117,32 @@ class GcpBillingConnector(Connector):
             contract=self.contract,
             checked_live=live,
             messages=tuple(messages),
+        )
+
+    def manifest(self) -> ComponentManifest:
+        return ComponentManifest(
+            name=self.name,
+            kind=ComponentKind.CONNECTOR,
+            version=self.contract.connector_contract_version,
+            output_events=(
+                EventType.CONNECTOR_COMPATIBILITY_CHECKED.value,
+                EventType.BILLING_ACCOUNT_DISCOVERED.value,
+                EventType.PROJECT_BILLING_DISCOVERED.value,
+                EventType.SKU_PRICING_DISCOVERED.value,
+            ),
+            deploy_modes=(DeployMode.IN_PROCESS, DeployMode.CLI_JOB, DeployMode.QUEUE_WORKER),
+            dependencies=("cloudbilling.googleapis.com/v1",),
+            description="GCP Cloud Billing API connector.",
+        )
+
+    def compatibility_event(self, live: bool = False) -> EventEnvelope:
+        report = self.check_compatibility(live=live)
+        return new_event(
+            EventType.CONNECTOR_COMPATIBILITY_CHECKED,
+            source=f"connector/{self.name}",
+            data=compatibility_to_dict(report),
+            subject=self.name,
+            dataschema="finsre.compatibility_report.v1",
         )
 
     def preview_api_calls(self, period: TimePeriod) -> list[str]:

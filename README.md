@@ -180,6 +180,64 @@ This first slice is a CLI agent. It can run locally, in CI, as a scheduled job, 
 
 Important limitation: the public Cloud Billing Account and Catalog APIs do not provide detailed historical usage-cost line items. They can tell us billing accounts, project billing associations, public services, SKUs, and pricing versions. Actual historical spend attribution will need a later source such as Billing Export, a customer-provided cost feed, or another cloud-native export.
 
+### Python Module Layout
+
+The MVP stays Python-first, but modules should stay separated by responsibility:
+
+```text
+src/finsre/
+  cli.py              # Argument parsing and process exit behavior only
+  cli_commands.py     # CLI command handlers
+  config.py           # Environment/config loading
+  core/               # Cloud-neutral events, ports, manifests, serialization
+  connectors/         # Provider connectors and connector registry
+  agents/             # Agent contracts and router; LangGraph can plug in here
+  memory/             # Memory/vector-store interfaces and early local stores
+  tracker/            # Investigation and recommendation state tracking
+```
+
+Rules for new code:
+
+- Put cloud/provider integration logic in `connectors`.
+- Put durable product concepts in `core` or `models`.
+- Put agent orchestration behind `agents` so LangGraph remains replaceable.
+- Put vector, retrieval, and long-term context code behind `memory`.
+- Put investigation/recommendation lifecycle state behind `tracker`.
+- Keep `cli.py` thin; it should parse arguments and delegate.
+
+### Event-Driven Core
+
+The core should be reusable enough for other projects, but not over-engineered. The current abstraction is deliberately small:
+
+- `EventEnvelope`: a CloudEvents-inspired envelope for module-to-module messages.
+- `ComponentManifest`: declares a component's name, kind, version, event inputs/outputs, dependencies, and deploy modes.
+- `EventBus`: a port interface for publishing and subscribing to events.
+- `InMemoryEventBus`: synchronous local implementation for tests and early CLI flows.
+
+This lets the MVP run in-process while preserving a future split:
+
+```text
+single CLI process today
+  connectors -> core events -> tracker / agents / memory
+
+separate workers later
+  connector job -> queue -> normalizer -> queue -> agent worker -> tracker service
+```
+
+Component boundaries can be inspected with:
+
+```bash
+finsre components list
+```
+
+Rules for keeping this light:
+
+- Start every component in-process.
+- Add a queue, service, or job boundary only when deployment or scaling requires it.
+- Use events at boundaries, not inside every function call.
+- Keep events as plain JSON-compatible data.
+- Version event schemas when another component depends on them.
+
 ## Agent Model
 
 FinSRE should use multiple expert agents, but the agents should operate on curated context rather than huge raw prompts.

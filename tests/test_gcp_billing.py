@@ -53,6 +53,28 @@ def test_check_compatibility_can_run_live_probe_with_injected_transport() -> Non
     assert transport.calls[0][0] == "/v1/billingAccounts"
 
 
+def test_manifest_describes_deployable_connector_boundary() -> None:
+    connector = GcpBillingConnector()
+
+    manifest = connector.manifest()
+
+    assert manifest.name == "gcp-billing"
+    assert manifest.kind.value == "connector"
+    assert "cli_job" in [mode.value for mode in manifest.deploy_modes]
+    assert "finsre.connector.compatibility.checked" in manifest.output_events
+
+
+def test_compatibility_event_uses_normalized_envelope() -> None:
+    connector = GcpBillingConnector()
+
+    event = connector.compatibility_event()
+
+    assert event.type == "finsre.connector.compatibility.checked"
+    assert event.source == "connector/gcp-billing"
+    assert event.subject == "gcp-billing"
+    assert event.data["status"] == "compatible"
+
+
 def test_preview_api_calls_include_period() -> None:
     connector = GcpBillingConnector(billing_account="012345-6789AB-CDEF01")
 
