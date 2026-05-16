@@ -1,0 +1,22 @@
+replicaCount: 1
+
+image:
+  repository: finsre
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+env:
+  FINSRE_ENVIRONMENT: kubernetes
+  FINSRE_GCP_BILLING_TABLE: ""
+  FINSRE_GCP_BILLING_PROJECT: ""
+
+resources: {}

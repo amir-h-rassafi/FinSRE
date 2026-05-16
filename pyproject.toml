@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finsre"
+version = "0.1.0"
+description = "Cloud cost optimization and cost incident investigation service."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111,<1",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.2,<3",
+    "uvicorn[standard]>=0.29,<1",
+]
+
+[project.optional-dependencies]
+gcp = [
+    "google-cloud-bigquery>=3.20,<4",
+]
+dev = [
+    "pytest>=8,<9",
+]
+
+[project.scripts]
+finsre-api = "finsre.app:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

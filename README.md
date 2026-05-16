@@ -68,6 +68,79 @@ Higher levels make the tool stickier because FinSRE becomes part of the operatio
 
 The system should be built around normalized events, bounded context, and specialized agents.
 
+```mermaid
+flowchart LR
+    subgraph Sources
+        GCP[GCP Billing Export]
+        INV[Cloud Inventory]
+        OBS[Metrics / Logs / Traces]
+        CHG[Deploys / IaC / Git Events]
+        OTH[Future Clouds and SaaS]
+    end
+
+    subgraph ConnectorLayer[Connector Layer]
+        CR[Connector Runtime]
+        GC[GCP Billing Connector]
+        PC[Pluggable Connectors]
+    end
+
+    subgraph Core[Cloud-Neutral Core]
+        RAW[Raw Source Store]
+        NORM[Normalization Layer]
+        GRAPH[Entity Graph]
+        TL[Timeline Store]
+        STATE[State Store]
+        EVID[Evidence Engine]
+    end
+
+    subgraph Intelligence[Intelligence Layer]
+        DET[Detectors]
+        ROUTER[Agent Router]
+        CA[Cost Analyst]
+        CC[Change Correlator]
+        CE[Cloud Expert Agents]
+        RP[Remediation Planner]
+    end
+
+    subgraph Delivery[Delivery Layer]
+        API[API Service]
+        UI[Operations UI]
+        TASK[Task / Ticket Integrations]
+        AUTO[Optional Automation]
+    end
+
+    GCP --> CR
+    INV --> CR
+    OBS --> CR
+    CHG --> CR
+    OTH --> PC
+    CR --> GC
+    CR --> PC
+    GC --> RAW
+    PC --> RAW
+    RAW --> NORM
+    NORM --> GRAPH
+    NORM --> TL
+    GRAPH --> EVID
+    TL --> EVID
+    STATE --> ROUTER
+    EVID --> DET
+    DET --> ROUTER
+    ROUTER --> CA
+    ROUTER --> CC
+    ROUTER --> CE
+    ROUTER --> RP
+    CA --> STATE
+    CC --> STATE
+    CE --> STATE
+    RP --> STATE
+    STATE --> API
+    EVID --> API
+    API --> UI
+    API --> TASK
+    API --> AUTO
+```
+
 ```text
 Connectors
   -> Raw data lake / warehouse
@@ -89,6 +162,17 @@ Connectors
 - Agent router: selects the right expert agent or workflow based on the question, available data, and current investigation state.
 - Evidence engine: attaches data-backed evidence to every recommendation and root-cause hypothesis.
 - Task manager: turns findings into actionable work items with owners, impact, risk, and status.
+
+## First Implementation Slice
+
+The first code shard is intentionally narrow:
+
+- Abstract connector interfaces and normalized cost models.
+- A GCP Billing Export connector that builds a daily cost query for BigQuery.
+- A small API surface to inspect registered connectors and preview the billing query.
+- Deployment assets for local containers, Cloud Run-style containers, and Helm-based Kubernetes installs.
+
+This first slice does not require an in-cluster agent. It assumes FinSRE runs as a service and receives cloud access through workload identity, service account credentials, or an equivalent cloud-native identity. A lightweight in-cloud collector can be added later if organizations want data collection to stay inside their own boundary.
 
 ## Agent Model
 
@@ -243,7 +327,7 @@ The first milestone should prove the product loop with a narrow but real path.
 
 This is not final, but it gives the project a starting shape.
 
-- Backend: Python or TypeScript service layer
+- Backend: Python service layer
 - Workflow orchestration: LangGraph or a lightweight internal state machine
 - Data warehouse: BigQuery first, with an abstraction for other warehouses later
 - Operational store: PostgreSQL for entities, tasks, state, and metadata
@@ -251,6 +335,55 @@ This is not final, but it gives the project a starting shape.
 - Frontend: focused operations UI for investigations, recommendations, and timelines
 - Connectors: modular adapter interface with source freshness and schema versioning
 - LLM layer: provider-agnostic interface with structured outputs and strict evidence references
+
+## Running the First Shard
+
+The current implementation is a small API service with one concrete connector: `gcp-billing`.
+
+### Local Development
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[gcp,dev]"
+export FINSRE_GCP_BILLING_TABLE="billing-project.billing_dataset.gcp_billing_export_v1_XXXXXX"
+export FINSRE_GCP_BILLING_PROJECT="billing-project"
+uvicorn finsre.app:create_app --factory --reload
+```
+
+Useful endpoints:
+
+- `GET /healthz`
+- `GET /v1/connectors`
+- `GET /v1/connectors/gcp-billing/query-preview`
+
+### Container
+
+```bash
+docker build -t finsre:local .
+docker run --rm -p 8080:8080 \
+  -e FINSRE_GCP_BILLING_TABLE="billing-project.billing_dataset.gcp_billing_export_v1_XXXXXX" \
+  -e FINSRE_GCP_BILLING_PROJECT="billing-project" \
+  finsre:local
+```
+
+### Cloud Run
+
+`deploy/cloudrun/service.yaml` is a starter Knative service manifest. The service should run with a service account that can read the configured BigQuery billing export table.
+
+### Kubernetes / Helm
+
+`deploy/helm/finsre` is a starter chart for running the service in Kubernetes.
+
+```bash
+helm upgrade --install finsre deploy/helm/finsre \
+  --set image.repository=REPLACE_WITH_IMAGE \
+  --set image.tag=REPLACE_WITH_TAG \
+  --set env.FINSRE_GCP_BILLING_TABLE="billing-project.billing_dataset.gcp_billing_export_v1_XXXXXX" \
+  --set env.FINSRE_GCP_BILLING_PROJECT="billing-project"
+```
+
+For GKE, prefer Workload Identity so the service does not need static credentials. For non-GCP clusters, use the platform's secret manager or workload identity equivalent.
 
 ## Design Principles
 
