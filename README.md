@@ -361,6 +361,8 @@ finsre connectors list
 Useful commands:
 
 - `finsre connectors list`
+- `finsre connectors check --name gcp-billing`
+- `finsre connectors check --name gcp-billing --live`
 - `finsre gcp billing api-preview --start-date 2026-05-01 --end-date 2026-05-16`
 - `finsre gcp billing accounts`
 - `finsre gcp billing projects`
@@ -368,6 +370,19 @@ Useful commands:
 - `finsre gcp billing skus --service-name services/6F81-5844-456A --start-date 2026-05-01 --end-date 2026-05-16`
 
 GCP Catalog API pricing periods must stay within one calendar month and cannot be in the future. FinSRE treats `start_date` as inclusive and `end_date` as exclusive.
+
+### Connector Compatibility
+
+Each connector should publish compatibility metadata:
+
+- Provider API name and version, for example `cloudbilling.googleapis.com` `v1`.
+- FinSRE connector contract version, for example `1.0`.
+- Minimum supported connector contract version.
+- Capability flags such as `billing_account_discovery` or `sku_pricing_by_period`.
+- Documentation URL for the upstream API.
+- Compatibility status from a local check and, optionally, a live provider API probe.
+
+This allows the router and future agents to know which connector capabilities are safe to use. It also gives operators a quick way to detect unsupported, misconfigured, or degraded integrations before an investigation depends on them.
 
 ### Container
 

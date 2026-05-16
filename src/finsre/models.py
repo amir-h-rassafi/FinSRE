@@ -18,6 +18,32 @@ class ConnectorStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class CompatibilityStatus(StrEnum):
+    COMPATIBLE = "compatible"
+    NEEDS_CONFIGURATION = "needs_configuration"
+    INCOMPATIBLE = "incompatible"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class ApiContract:
+    provider_api: str
+    provider_api_version: str
+    connector_contract_version: str
+    min_supported_contract_version: str
+    docs_url: str
+    stability: str = "public"
+
+
+@dataclass(frozen=True)
+class CompatibilityReport:
+    connector: str
+    status: CompatibilityStatus
+    contract: ApiContract
+    checked_live: bool
+    messages: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class ConnectorDescriptor:
     name: str
@@ -25,6 +51,7 @@ class ConnectorDescriptor:
     source_type: str
     status: ConnectorStatus
     capabilities: tuple[str, ...]
+    contract: ApiContract
     details: dict[str, Any] = field(default_factory=dict)
 
 

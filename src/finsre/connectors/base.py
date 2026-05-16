@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from finsre.models import ConnectorDescriptor, CostLineItem, TimePeriod
+from finsre.models import CompatibilityReport, ConnectorDescriptor, CostLineItem, TimePeriod
 
 
 class Connector(ABC):
@@ -14,6 +14,10 @@ class Connector(ABC):
     def preview_api_calls(self, period: TimePeriod) -> list[str]:
         """Return source API calls when the connector supports call preview."""
         return []
+
+    def check_compatibility(self, live: bool = False) -> CompatibilityReport:
+        """Report local and optional live compatibility for this connector."""
+        raise NotImplementedError
 
     def collect_costs(self) -> Iterable[CostLineItem]:
         """Collect normalized cost rows.

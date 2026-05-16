@@ -9,7 +9,7 @@ from typing import Any
 from finsre.config import get_settings
 from finsre.connectors.gcp_billing import GcpBillingConnector
 from finsre.connectors.registry import build_default_registry
-from finsre.models import ConnectorDescriptor, TimePeriod
+from finsre.models import CompatibilityReport, ConnectorDescriptor, TimePeriod
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     connectors_sub = connectors.add_subparsers(dest="connectors_command", required=True)
     connectors_list = connectors_sub.add_parser("list", help="List connectors")
     connectors_list.set_defaults(func=_list_connectors)
+    connectors_check = connectors_sub.add_parser("check", help="Check connector compatibility")
+    connectors_check.add_argument("--name", help="Connector name to check. Defaults to all connectors.")
+    connectors_check.add_argument("--live", action="store_true", help="Run lightweight live provider API probes.")
+    connectors_check.set_defaults(func=_check_connectors)
 
     gcp = subparsers.add_parser("gcp", help="GCP connector commands")
     gcp_sub = gcp.add_subparsers(dest="gcp_command", required=True)
@@ -72,6 +76,12 @@ def _add_period_args(parser: argparse.ArgumentParser) -> None:
 def _list_connectors(_: argparse.Namespace) -> list[dict[str, Any]]:
     registry = build_default_registry(get_settings())
     return [_connector_dict(connector.describe()) for connector in registry.list()]
+
+
+def _check_connectors(args: argparse.Namespace) -> list[dict[str, Any]]:
+    registry = build_default_registry(get_settings())
+    connectors = [registry.get(args.name)] if args.name else registry.list()
+    return [_compatibility_dict(connector.check_compatibility(live=args.live)) for connector in connectors]
 
 
 def _gcp_billing_api_preview(args: argparse.Namespace) -> dict[str, Any]:
@@ -132,7 +142,29 @@ def _connector_dict(descriptor: ConnectorDescriptor) -> dict[str, Any]:
         "source_type": descriptor.source_type,
         "status": descriptor.status.value,
         "capabilities": list(descriptor.capabilities),
+        "contract": _contract_dict(descriptor.contract),
         "details": descriptor.details,
+    }
+
+
+def _compatibility_dict(report: CompatibilityReport) -> dict[str, Any]:
+    return {
+        "connector": report.connector,
+        "status": report.status.value,
+        "checked_live": report.checked_live,
+        "contract": _contract_dict(report.contract),
+        "messages": list(report.messages),
+    }
+
+
+def _contract_dict(contract: Any) -> dict[str, Any]:
+    return {
+        "provider_api": contract.provider_api,
+        "provider_api_version": contract.provider_api_version,
+        "connector_contract_version": contract.connector_contract_version,
+        "min_supported_contract_version": contract.min_supported_contract_version,
+        "docs_url": contract.docs_url,
+        "stability": contract.stability,
     }
 
 

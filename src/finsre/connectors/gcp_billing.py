@@ -3,7 +3,15 @@ from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from finsre.connectors.base import Connector
-from finsre.models import CloudProvider, ConnectorDescriptor, ConnectorStatus, TimePeriod
+from finsre.models import (
+    ApiContract,
+    CloudProvider,
+    CompatibilityReport,
+    CompatibilityStatus,
+    ConnectorDescriptor,
+    ConnectorStatus,
+    TimePeriod,
+)
 
 
 class BillingApiTransport(Protocol):
@@ -43,6 +51,14 @@ class GcpBillingConnector(Connector):
 
     name = "gcp-billing"
     base_url = "https://cloudbilling.googleapis.com"
+    contract = ApiContract(
+        provider_api="cloudbilling.googleapis.com",
+        provider_api_version="v1",
+        connector_contract_version="1.0",
+        min_supported_contract_version="1.0",
+        docs_url="https://cloud.google.com/billing/docs/reference/rest",
+        stability="public_ga",
+    )
 
     def __init__(
         self,
@@ -72,7 +88,32 @@ class GcpBillingConnector(Connector):
                 "service_catalog",
                 "sku_pricing_by_period",
             ),
+            contract=self.contract,
             details=details,
+        )
+
+    def check_compatibility(self, live: bool = False) -> CompatibilityReport:
+        messages = [
+            "Connector contract 1.0 targets Cloud Billing API v1.",
+            "Historical usage-cost line items are not available from this API family.",
+        ]
+        status = CompatibilityStatus.COMPATIBLE
+
+        if live:
+            try:
+                self.list_billing_accounts()
+            except Exception as exc:
+                status = CompatibilityStatus.UNKNOWN
+                messages.append(f"Live Cloud Billing API probe failed: {exc}")
+            else:
+                messages.append("Live Cloud Billing API probe succeeded.")
+
+        return CompatibilityReport(
+            connector=self.name,
+            status=status,
+            contract=self.contract,
+            checked_live=live,
+            messages=tuple(messages),
         )
 
     def preview_api_calls(self, period: TimePeriod) -> list[str]:
