@@ -2,6 +2,8 @@ import argparse
 from decimal import Decimal
 from typing import Any
 
+from finsre.agents.investigation import InvestigationAgent
+from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.config import get_settings
 from finsre.connectors.gcp_billing import GcpBillingConnector
 from finsre.connectors.registry import build_default_registry
@@ -18,6 +20,8 @@ from finsre.core.serialization import (
 from finsre.core.time import parse_period
 from finsre.discovery.sku import BillingSkuSignal, SkuClassifier
 from finsre.discovery.workflow import SkuDiscoveryWorkflow
+from finsre.errors import ApprovalRequiredError
+from finsre.llm.factory import build_llm_client
 
 
 def list_connectors(_: argparse.Namespace) -> list[dict[str, Any]]:
@@ -41,6 +45,32 @@ def plan_sku_discovery(args: argparse.Namespace) -> dict[str, Any]:
         "classification": sku_classification_to_dict(plan.classification),
         "probes": [discovery_probe_to_dict(probe) for probe in plan.probes],
         "questions": [question_to_dict(question) for question in plan.questions],
+    }
+
+
+def investigate_sku_draft(args: argparse.Namespace) -> dict[str, Any]:
+    signal = _sku_signal_from_args(args)
+    draft = InvestigationAgent().draft_from_sku(signal)
+    return {
+        "llm_required": draft.llm_required,
+        "approval_reason": draft.approval_reason,
+        "classification": sku_classification_to_dict(draft.discovery_plan.classification),
+        "probes": [discovery_probe_to_dict(probe) for probe in draft.discovery_plan.probes],
+        "questions": [question_to_dict(question) for question in draft.discovery_plan.questions],
+    }
+
+
+def investigate_sku_run(args: argparse.Namespace) -> dict[str, Any]:
+    if not args.approve_llm:
+        raise ApprovalRequiredError("Refusing to call LLM without --approve-llm.")
+    signal = _sku_signal_from_args(args)
+    agent = LangGraphInvestigationAgent(llm_client=build_llm_client(get_settings()))
+    result = agent.run_from_sku(signal)
+    return {
+        "capability": result.capability.value,
+        "summary": result.summary,
+        "confidence": result.confidence,
+        "evidence": list(result.evidence),
     }
 
 

@@ -6,6 +6,7 @@ from finsre.connectors.base import Connector
 from finsre.core.components import ComponentKind, ComponentManifest, DeployMode
 from finsre.core.events import EventEnvelope, EventType, new_event
 from finsre.core.serialization import compatibility_to_dict
+from finsre.errors import OptionalDependencyError
 from finsre.models import (
     ApiContract,
     CloudProvider,
@@ -30,7 +31,7 @@ class GoogleAuthBillingApiTransport:
             import google.auth
             from google.auth.transport.requests import AuthorizedSession
         except ImportError as exc:
-            raise RuntimeError("Install the gcp extra to call GCP APIs: pip install '.[gcp]'") from exc
+            raise OptionalDependencyError("Install the GCP extra to call GCP APIs: pip install '.[gcp]'") from exc
 
         credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-billing.readonly"])
         self._session = AuthorizedSession(credentials)

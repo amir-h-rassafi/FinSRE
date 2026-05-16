@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 
 class AgentCapability(StrEnum):
+    INVESTIGATION = "investigation"
     COST_ANALYSIS = "cost_analysis"
     CHANGE_CORRELATION = "change_correlation"
     REMEDIATION_PLANNING = "remediation_planning"

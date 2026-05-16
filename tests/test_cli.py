@@ -102,3 +102,53 @@ def test_discovery_plan_sku_outputs_probes_and_questions() -> None:
     assert payload["classification"]["domain"] == "network_egress"
     assert [probe["kind"] for probe in payload["probes"]] == ["network", "telemetry", "change"]
     assert payload["questions"][0]["id"] == "prod-api:traffic-intent"
+
+
+def test_investigate_run_requires_approval() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+        exit_code = main(
+            [
+                "investigate",
+                "run-from-sku",
+                "--service",
+                "Compute Engine",
+                "--sku-id",
+                "egress-1",
+                "--sku-description",
+                "Inter-region Egress",
+                "--cost",
+                "42.50",
+            ]
+        )
+
+    assert exit_code == 1
+    assert "Refusing to call LLM without --approve-llm" in stderr.getvalue()
+
+
+def test_investigate_run_with_approval_fails_without_api_key(monkeypatch) -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+        exit_code = main(
+            [
+                "investigate",
+                "run-from-sku",
+                "--approve-llm",
+                "--service",
+                "Compute Engine",
+                "--sku-id",
+                "egress-1",
+                "--sku-description",
+                "Inter-region Egress",
+                "--cost",
+                "42.50",
+            ]
+        )
+
+    assert exit_code == 1
+    assert "OPENAI_API_KEY is required" in stderr.getvalue()

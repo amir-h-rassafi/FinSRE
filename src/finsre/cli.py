@@ -4,6 +4,7 @@ import sys
 
 from finsre import cli_commands
 from finsre.core.serialization import json_default
+from finsre.errors import FinSREError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -12,9 +13,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         payload = args.func(args)
-    except Exception as exc:
+    except FinSREError as exc:
         print(f"finsre: {exc}", file=sys.stderr)
         return 1
+    except Exception as exc:
+        print(f"finsre: unexpected error: {exc}", file=sys.stderr)
+        return 2
 
     if payload is not None:
         print(json.dumps(payload, indent=2, sort_keys=True, default=json_default))
@@ -38,6 +42,16 @@ def build_parser() -> argparse.ArgumentParser:
     plan_sku = discovery_sub.add_parser("plan-sku", help="Plan discovery probes for a billed SKU")
     _add_sku_signal_args(plan_sku)
     plan_sku.set_defaults(func=cli_commands.plan_sku_discovery)
+
+    investigate = subparsers.add_parser("investigate", help="Investigation agent commands")
+    investigate_sub = investigate.add_subparsers(dest="investigate_command", required=True)
+    investigate_draft = investigate_sub.add_parser("draft-from-sku", help="Draft investigation context from one SKU")
+    _add_sku_signal_args(investigate_draft)
+    investigate_draft.set_defaults(func=cli_commands.investigate_sku_draft)
+    investigate_run = investigate_sub.add_parser("run-from-sku", help="Run LLM investigation for one SKU")
+    _add_sku_signal_args(investigate_run)
+    investigate_run.add_argument("--approve-llm", action="store_true", help="Explicitly approve sending context to LLM.")
+    investigate_run.set_defaults(func=cli_commands.investigate_sku_run)
 
     connectors = subparsers.add_parser("connectors", help="Inspect configured connectors")
     connectors_sub = connectors.add_subparsers(dest="connectors_command", required=True)

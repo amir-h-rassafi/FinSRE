@@ -6,6 +6,15 @@ framework.
 """
 
 from finsre.agents.base import AgentCapability, AgentRequest, AgentResult
+from finsre.agents.investigation import InvestigationAgent
+from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.agents.router import AgentRouter
 
-__all__ = ["AgentCapability", "AgentRequest", "AgentResult", "AgentRouter"]
+__all__ = [
+    "AgentCapability",
+    "AgentRequest",
+    "AgentResult",
+    "AgentRouter",
+    "InvestigationAgent",
+    "LangGraphInvestigationAgent",
+]

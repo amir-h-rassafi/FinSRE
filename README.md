@@ -314,6 +314,52 @@ The router should:
 
 LangGraph is a candidate for workflow orchestration because the problem naturally involves stateful routing, multi-step investigations, and agent handoffs. It should be validated against simpler alternatives before becoming a hard dependency.
 
+### LLM Investigation Agent
+
+The current LLM path is optional and fail-fast:
+
+- The deterministic discovery planner runs without an API key.
+- The LangGraph investigation agent only runs after explicit `--approve-llm`.
+- Secrets are read from environment variables and are never prompted for or stored.
+- Missing approval, missing API keys, and missing optional dependencies use FinSRE-owned errors.
+
+Install optional LLM dependencies:
+
+```bash
+pip install -e ".[llm]"
+```
+
+Configure:
+
+```bash
+export FINSRE_LLM_PROVIDER=openai
+export FINSRE_LLM_MODEL=gpt-4.1-mini
+export OPENAI_API_KEY=...
+```
+
+Draft without LLM:
+
+```bash
+finsre investigate draft-from-sku \
+  --service "Compute Engine" \
+  --sku-id "egress-1" \
+  --sku-description "Inter-region Egress" \
+  --cost 42.50 \
+  --project-id prod-api
+```
+
+Run with explicit human approval:
+
+```bash
+finsre investigate run-from-sku \
+  --approve-llm \
+  --service "Compute Engine" \
+  --sku-id "egress-1" \
+  --sku-description "Inter-region Egress" \
+  --cost 42.50 \
+  --project-id prod-api
+```
+
 ## Normalized Data Model
 
 The first implementation should define a small durable model before adding many connectors.
