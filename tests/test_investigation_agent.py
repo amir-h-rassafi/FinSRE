@@ -1,7 +1,6 @@
 import sys
-import types
-from unittest.mock import patch
 from decimal import Decimal
+from unittest.mock import patch
 
 from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.discovery.sku import BillingSkuSignal
@@ -18,8 +17,7 @@ class FakeLLM:
         return LLMResponse(content="Investigate network egress and missing traffic intent.", model="fake")
 
 
-def test_langgraph_investigation_agent_runs_with_fake_langgraph(monkeypatch) -> None:
-    install_fake_langgraph(monkeypatch)
+def test_langgraph_investigation_agent_runs_with_fake_langgraph(fake_langgraph) -> None:
     llm = FakeLLM()
     agent = LangGraphInvestigationAgent(llm_client=llm)
     signal = BillingSkuSignal(
@@ -55,42 +53,3 @@ def test_langgraph_investigation_agent_raises_repo_error_without_langgraph(monke
             assert "Install the LLM extra" in str(exc)
         else:
             raise AssertionError("expected OptionalDependencyError")
-
-
-def install_fake_langgraph(monkeypatch) -> None:
-    graph_module = types.ModuleType("langgraph.graph")
-
-    class FakeCompiledGraph:
-        def __init__(self, graph):
-            self.graph = graph
-
-        def invoke(self, state):
-            current = self.graph.entry
-            while current != "__end__":
-                state.update(self.graph.nodes[current](state))
-                current = self.graph.edges[current]
-            return state
-
-    class FakeStateGraph:
-        def __init__(self, _state_type):
-            self.nodes = {}
-            self.edges = {}
-            self.entry = None
-
-        def add_node(self, name, func):
-            self.nodes[name] = func
-
-        def set_entry_point(self, name):
-            self.entry = name
-
-        def add_edge(self, start, end):
-            self.edges[start] = end
-
-        def compile(self):
-            return FakeCompiledGraph(self)
-
-    graph_module.END = "__end__"
-    graph_module.StateGraph = FakeStateGraph
-    langgraph_module = types.ModuleType("langgraph")
-    monkeypatch.setitem(sys.modules, "langgraph", langgraph_module)
-    monkeypatch.setitem(sys.modules, "langgraph.graph", graph_module)

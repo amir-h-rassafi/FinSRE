@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from finsre.agents.base import AgentResult
 from finsre.agents.investigation import InvestigationAgent
 from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.config import get_settings
@@ -67,14 +68,8 @@ def investigate_sku_run(args: argparse.Namespace) -> dict[str, Any]:
     if not args.approve_llm:
         raise ApprovalRequiredError("Refusing to call LLM without --approve-llm.")
     signal = _sku_signal_from_args(args)
-    agent = LangGraphInvestigationAgent(llm_client=build_llm_client(get_settings()))
-    result = agent.run_from_sku(signal)
-    return {
-        "capability": result.capability.value,
-        "summary": result.summary,
-        "confidence": result.confidence,
-        "evidence": list(result.evidence),
-    }
+    result = _langgraph_investigation_agent().run_from_sku(signal)
+    return _agent_result_to_dict(result)
 
 
 def investigate_csv_draft(args: argparse.Namespace) -> dict[str, Any]:
@@ -97,6 +92,22 @@ def investigate_csv_draft(args: argparse.Namespace) -> dict[str, Any]:
         "path": str(connector.path),
         "count": len(drafts),
         "drafts": drafts,
+    }
+
+
+def investigate_csv_run(args: argparse.Namespace) -> dict[str, Any]:
+    if not args.approve_llm:
+        raise ApprovalRequiredError("Refusing to call LLM without --approve-llm.")
+    connector = local_csv_billing_connector(args)
+    agent = _langgraph_investigation_agent()
+    investigations = []
+    for signal in connector.collect_sku_signals(limit=args.limit):
+        investigations.append(_agent_result_to_dict(agent.run_from_sku(signal)))
+    return {
+        "connector": connector.name,
+        "path": str(connector.path),
+        "count": len(investigations),
+        "investigations": investigations,
     }
 
 
@@ -191,6 +202,19 @@ def local_csv_billing_connector(args: argparse.Namespace) -> LocalCsvBillingConn
         ),
         currency=args.currency,
     )
+
+
+def _langgraph_investigation_agent() -> LangGraphInvestigationAgent:
+    return LangGraphInvestigationAgent(llm_client=build_llm_client(get_settings()))
+
+
+def _agent_result_to_dict(result: AgentResult) -> dict[str, Any]:
+    return {
+        "capability": result.capability.value,
+        "summary": result.summary,
+        "confidence": result.confidence,
+        "evidence": list(result.evidence),
+    }
 
 
 def _sku_signal_from_args(args: argparse.Namespace) -> BillingSkuSignal:

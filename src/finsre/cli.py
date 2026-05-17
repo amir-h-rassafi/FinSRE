@@ -54,6 +54,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_csv_feed_args(investigate_csv)
     investigate_csv.set_defaults(func=cli_commands.investigate_csv_draft)
+    investigate_csv_run = investigate_sub.add_parser(
+        "run-from-csv",
+        help="Run LLM investigations from local CSV billing rows",
+    )
+    _add_csv_feed_args(investigate_csv_run)
+    investigate_csv_run.add_argument(
+        "--approve-llm",
+        action="store_true",
+        help="Explicitly approve sending context to LLM.",
+    )
+    investigate_csv_run.set_defaults(func=cli_commands.investigate_csv_run)
     investigate_run = investigate_sub.add_parser("run-from-sku", help="Run LLM investigation for one SKU")
     _add_sku_signal_args(investigate_run)
     investigate_run.add_argument(

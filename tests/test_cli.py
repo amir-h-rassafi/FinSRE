@@ -3,6 +3,7 @@ from io import StringIO
 from unittest.mock import patch
 
 from finsre.cli import main
+from finsre.llm.base import LLMResponse
 
 
 def test_connectors_list_outputs_json() -> None:
@@ -137,6 +138,44 @@ def test_investigate_draft_from_csv_runs_existing_agent(tmp_path) -> None:
     assert payload["drafts"][0]["classification"]["domain"] == "compute"
 
 
+def test_investigate_run_from_csv_uses_approved_llm_path(fake_langgraph, tmp_path) -> None:
+    csv_path = tmp_path / "billing.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "service,sku,cost,project,region",
+                "Compute Engine,Inter-region Egress,42.50,prod-api,europe-west1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    stdout = StringIO()
+
+    with (
+        patch("finsre.cli_commands.build_llm_client", return_value=FakeLLM()),
+        patch("sys.stdout", stdout),
+    ):
+        exit_code = main(["investigate", "run-from-csv", "--approve-llm", "--path", str(csv_path), "--limit", "1"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["count"] == 1
+    assert payload["investigations"][0]["summary"] == "Fake investigation summary."
+    assert payload["investigations"][0]["evidence"][0]["context"]["classification"]["domain"] == "network_egress"
+
+
+def test_investigate_run_from_csv_requires_approval(tmp_path) -> None:
+    csv_path = tmp_path / "billing.csv"
+    csv_path.write_text("service,sku,cost\nCompute Engine,egress-1,42.50\n", encoding="utf-8")
+    stderr = StringIO()
+
+    with patch("sys.stderr", stderr):
+        exit_code = main(["investigate", "run-from-csv", "--path", str(csv_path), "--limit", "1"])
+
+    assert exit_code == 1
+    assert "Refusing to call LLM without --approve-llm" in stderr.getvalue()
+
+
 def test_investigate_run_requires_approval() -> None:
     stdout = StringIO()
     stderr = StringIO()
@@ -185,3 +224,8 @@ def test_investigate_run_with_approval_fails_without_api_key(monkeypatch) -> Non
 
     assert exit_code == 1
     assert "OPENAI_API_KEY is required" in stderr.getvalue()
+
+
+class FakeLLM:
+    def complete(self, _messages):
+        return LLMResponse(content="Fake investigation summary.", model="fake")

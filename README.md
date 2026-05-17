@@ -374,6 +374,15 @@ finsre investigate run-from-sku \
   --project-id prod-api
 ```
 
+Run approved investigations from a local billing CSV:
+
+```bash
+finsre investigate run-from-csv \
+  --approve-llm \
+  --path ./billing.csv \
+  --limit 5
+```
+
 ## Normalized Data Model
 
 The first implementation should define a small durable model before adding many connectors.
@@ -580,6 +589,7 @@ Useful commands:
 - `finsre connectors check --name local-csv-billing --path ./billing.csv`
 - `finsre connectors preview-csv --path ./billing.csv --limit 10`
 - `finsre investigate draft-from-csv --path ./billing.csv --limit 10`
+- `finsre investigate run-from-csv --approve-llm --path ./billing.csv --limit 5`
 - `finsre gcp billing api-preview --start-date 2026-05-01 --end-date 2026-05-16`
 - `finsre gcp billing accounts`
 - `finsre gcp billing projects`

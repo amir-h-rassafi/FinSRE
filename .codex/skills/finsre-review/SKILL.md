@@ -1,3 +1,8 @@
+---
+name: finsre-review
+description: Review FinSRE changes for structure, focused tests, minimal code, and evidence-driven behavior.
+---
+
 # FinSRE Review Skill
 
 Use this skill when reviewing FinSRE changes.
