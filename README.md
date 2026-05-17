@@ -519,6 +519,8 @@ pytest
 pre-commit run --all-files
 ```
 
+The pre-commit hooks manage their own Ruff and pytest environments, so they do not require the project virtual environment to be active once `pre-commit` itself is installed.
+
 All tests in `tests/` are unit tests. They must not call live cloud APIs, live LLM providers, or the network. Tests that need cloud, network, or provider credentials should live outside the unit suite until an explicit integration-test path exists.
 
 Useful commands:

@@ -9,6 +9,8 @@ repos:
     hooks:
       - id: unit-tests
         name: unit tests
-        entry: python3 -m pytest -m unit
-        language: system
+        entry: pytest -m unit
+        language: python
+        additional_dependencies:
+          - pytest>=8,<9
         pass_filenames: false
