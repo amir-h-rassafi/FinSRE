@@ -60,7 +60,26 @@ def test_check_compatibility_detects_contract_mismatch() -> None:
     report = BrokenContractConnector().check_compatibility()
 
     assert report.ok is False
-    assert len(report.problems) == 3
+    assert len(report.problems) == 2
+
+
+def test_check_compatibility_detects_missing_required_capability() -> None:
+    class MissingCapabilityConnector(GcpBillingConnector):
+        def describe(self):
+            descriptor = super().describe()
+            return type(descriptor)(
+                name=descriptor.name,
+                provider=descriptor.provider,
+                source_type=descriptor.source_type,
+                capabilities=("billing_account_discovery",),
+                contract=descriptor.contract,
+                details=descriptor.details,
+            )
+
+    report = MissingCapabilityConnector().check_compatibility()
+
+    assert report.ok is False
+    assert "Missing required capability: sku_pricing_by_period." in report.problems
 
 
 def test_manifest_describes_deployable_connector_boundary() -> None:

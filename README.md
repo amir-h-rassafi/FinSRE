@@ -505,6 +505,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[gcp,dev]"
 pre-commit install
+cp .env.example .env
 export FINSRE_GCP_BILLING_ACCOUNT="012345-6789AB-CDEF01"
 export FINSRE_GCP_BILLING_CURRENCY="USD"
 finsre connectors list
@@ -522,6 +523,42 @@ pre-commit run --all-files
 The pre-commit hooks manage their own Ruff and pytest environments, so they do not require the project virtual environment to be active once `pre-commit` itself is installed.
 
 All tests in `tests/` are unit tests. They must not call live cloud APIs, live LLM providers, or the network. Tests that need cloud, network, or provider credentials should live outside the unit suite until an explicit integration-test path exists.
+
+Local smoke tests without credentials:
+
+```bash
+PYTHONPATH=src python3 -m finsre.cli connectors list
+PYTHONPATH=src python3 -m finsre.cli connectors check --name gcp-billing
+PYTHONPATH=src python3 -m finsre.cli discovery plan-sku \
+  --service "Compute Engine" \
+  --sku-id "egress-1" \
+  --sku-description "Inter-region Egress" \
+  --cost 42.50 \
+  --project-id prod-api
+PYTHONPATH=src python3 -m finsre.cli investigate draft-from-sku \
+  --service "Compute Engine" \
+  --sku-id "egress-1" \
+  --sku-description "Inter-region Egress" \
+  --cost 42.50 \
+  --project-id prod-api
+```
+
+Commands that call live GCP require the `gcp` extra and application default credentials or workload identity. Commands that call the LLM require the `llm` extra, `OPENAI_API_KEY`, and explicit `--approve-llm`.
+
+### Test Datasets
+
+Use three dataset levels:
+
+- Private regression fixture: your local GCP SKU matrix CSV. Do not commit it.
+- Public billing benchmark: FOCUS sample datasets from the FinOps Foundation.
+- Synthetic GCP fixture: a small generated CSV/JSON shaped like GCP billing export fields for tests that need GCP-like examples without private data.
+
+Public candidates:
+
+- FOCUS sample data: `https://github.com/FinOps-Open-Cost-and-Usage-Spec/FOCUS-Sample-Data`
+- FOCUS getting started: `https://focus.finops.org/get-started/`
+- GCP Billing Export schema docs: `https://cloud.google.com/billing/docs/how-to/export-data-bigquery`
+- OpenCost API examples for Kubernetes allocation shapes: `https://opencost.io/docs/integrations/api-examples/`
 
 Useful commands:
 

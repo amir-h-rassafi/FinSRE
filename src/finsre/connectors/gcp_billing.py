@@ -53,12 +53,6 @@ class GcpBillingConnector(Connector):
 
     name = "gcp-billing"
     base_url = "https://cloudbilling.googleapis.com"
-    expected_contract = ConnectorContract(
-        version="1.0",
-        upstream="cloudbilling.googleapis.com/v1",
-        schema="finsre.gcp_billing.v1",
-        docs_url="https://cloud.google.com/billing/docs/reference/rest",
-    )
     contract = ConnectorContract(
         version="1.0",
         upstream="cloudbilling.googleapis.com/v1",
@@ -118,15 +112,29 @@ class GcpBillingConnector(Connector):
 
     def _contract_problems(self) -> tuple[str, ...]:
         problems: list[str] = []
-        if self.contract.version != self.expected_contract.version:
-            problems.append(
-                f"Expected connector contract version {self.expected_contract.version}, got {self.contract.version}."
-            )
-        if self.contract.upstream != self.expected_contract.upstream:
-            problems.append(f"Expected upstream {self.expected_contract.upstream}, got {self.contract.upstream}.")
-        if self.contract.schema != self.expected_contract.schema:
-            problems.append(f"Expected schema {self.expected_contract.schema}, got {self.contract.schema}.")
+        if not self.contract.version:
+            problems.append("Connector contract version is required.")
+        if not self.contract.upstream:
+            problems.append("Connector contract upstream is required.")
+        if not self.contract.schema:
+            problems.append("Connector contract schema is required.")
+        if self.contract.upstream != "cloudbilling.googleapis.com/v1":
+            problems.append(f"Unsupported upstream for gcp-billing: {self.contract.upstream}.")
+        if self.contract.schema != "finsre.gcp_billing.v1":
+            problems.append(f"Unsupported schema for gcp-billing: {self.contract.schema}.")
+        missing = sorted(set(self._required_capabilities()) - set(self.describe().capabilities))
+        for capability in missing:
+            problems.append(f"Missing required capability: {capability}.")
         return tuple(problems)
+
+    @staticmethod
+    def _required_capabilities() -> tuple[str, ...]:
+        return (
+            "billing_account_discovery",
+            "project_billing_discovery",
+            "service_catalog",
+            "sku_pricing_by_period",
+        )
 
     def manifest(self) -> ComponentManifest:
         return ComponentManifest(
