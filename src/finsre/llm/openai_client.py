@@ -1,5 +1,7 @@
-from finsre.llm.base import LLMClient, LLMMessage, LLMResponse, MissingLLMConfiguration
+import os
+
 from finsre.errors import OptionalDependencyError
+from finsre.llm.base import LLMClient, LLMMessage, LLMResponse, MissingLLMConfiguration
 
 
 class OpenAILLMClient(LLMClient):
@@ -11,7 +13,15 @@ class OpenAILLMClient(LLMClient):
         except ImportError as exc:
             raise OptionalDependencyError("Install the LLM extra first: pip install '.[llm]'") from exc
 
-        self._client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key)
+        if _langsmith_tracing_enabled(os.environ):
+            try:
+                from langsmith.wrappers import wrap_openai
+            except ImportError as exc:
+                raise OptionalDependencyError("Install the LLM extra first: pip install '.[llm]'") from exc
+            client = wrap_openai(client)
+
+        self._client = client
         self._model = model
 
     def complete(self, messages: list[LLMMessage]) -> LLMResponse:
@@ -20,3 +30,7 @@ class OpenAILLMClient(LLMClient):
             input=[{"role": message.role, "content": message.content} for message in messages],
         )
         return LLMResponse(content=response.output_text, model=self._model)
+
+
+def _langsmith_tracing_enabled(env: dict[str, str]) -> bool:
+    return env.get("LANGSMITH_TRACING", "").lower() in {"1", "true", "yes", "on"}

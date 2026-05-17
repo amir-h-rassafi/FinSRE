@@ -339,6 +339,18 @@ export FINSRE_LLM_MODEL=gpt-4.1-mini
 export OPENAI_API_KEY=...
 ```
 
+Optional LangSmith visibility:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=...
+export LANGSMITH_PROJECT=finsre-local
+# If the API key belongs to multiple workspaces:
+# export LANGSMITH_WORKSPACE_ID=...
+```
+
+FinSRE uses LangGraph for the approved investigation path and wraps the raw OpenAI SDK with LangSmith when tracing is enabled. This gives visibility into the LLM call without making deterministic discovery depend on a hosted tracing service.
+
 Draft without LLM:
 
 ```bash
@@ -543,7 +555,7 @@ PYTHONPATH=src python3 -m finsre.cli investigate draft-from-sku \
   --project-id prod-api
 ```
 
-Commands that call live GCP require the `gcp` extra and application default credentials or workload identity. Commands that call the LLM require the `llm` extra, `OPENAI_API_KEY`, and explicit `--approve-llm`.
+Commands that call live GCP require the `gcp` extra and application default credentials or workload identity. Commands that call the LLM require the `llm` extra, `OPENAI_API_KEY`, and explicit `--approve-llm`. LangSmith tracing is opt-in with `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`.
 
 ### Test Datasets
 
