@@ -577,6 +577,9 @@ Useful commands:
 - `finsre connectors list`
 - `finsre connectors check --name gcp-billing`
 - `finsre connectors check --name gcp-billing --live`
+- `finsre connectors check --name local-csv-billing --path ./billing.csv`
+- `finsre connectors preview-csv --path ./billing.csv --limit 10`
+- `finsre investigate draft-from-csv --path ./billing.csv --limit 10`
 - `finsre gcp billing api-preview --start-date 2026-05-01 --end-date 2026-05-16`
 - `finsre gcp billing accounts`
 - `finsre gcp billing projects`
@@ -584,6 +587,8 @@ Useful commands:
 - `finsre gcp billing skus --service-name services/6F81-5844-456A --start-date 2026-05-01 --end-date 2026-05-16`
 
 GCP Catalog API pricing periods must stay within one calendar month and cannot be in the future. FinSRE treats `start_date` as inclusive and `end_date` as exclusive.
+
+The local CSV connector accepts either row-shaped billing feeds with service, SKU, and cost columns, or daily matrix feeds with `Service`, `SKU`, and `YYYY-MM-DD` cost columns. Column names can be overridden with flags such as `--service-column`, `--sku-column`, and `--cost-column`.
 
 ### Connector Compatibility
 

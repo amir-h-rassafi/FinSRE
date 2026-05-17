@@ -1,6 +1,7 @@
 from finsre.config import Settings
 from finsre.connectors.base import Connector
 from finsre.connectors.gcp_billing import GcpBillingConnector
+from finsre.connectors.local_csv_billing import LocalCsvBillingConnector
 
 
 class ConnectorRegistry:
@@ -23,6 +24,7 @@ def build_default_registry(settings: Settings) -> ConnectorRegistry:
             GcpBillingConnector(
                 billing_account=settings.gcp_billing_account,
                 currency_code=settings.gcp_billing_currency,
-            )
+            ),
+            LocalCsvBillingConnector(),
         ]
     )

@@ -8,7 +8,7 @@ from finsre.core.events import EventEnvelope
 from finsre.discovery.probes import DiscoveryProbe
 from finsre.discovery.questions import Question
 from finsre.discovery.sku import BillingSkuSignal, SkuClassification
-from finsre.models import CompatibilityReport, ConnectorContract, ConnectorDescriptor
+from finsre.models import CompatibilityReport, ConnectorContract, ConnectorDescriptor, CostLineItem
 
 
 def connector_to_dict(descriptor: ConnectorDescriptor) -> dict[str, Any]:
@@ -110,6 +110,23 @@ def question_to_dict(question: Question) -> dict[str, Any]:
         "text": question.text,
         "reason": question.reason,
         "blocks_recommendation": question.blocks_recommendation,
+    }
+
+
+def cost_line_item_to_dict(item: CostLineItem) -> dict[str, Any]:
+    return {
+        "provider": item.provider.value,
+        "account_id": item.account_id,
+        "service": item.service,
+        "sku": item.sku,
+        "usage_start_date": item.usage_start_date,
+        "currency": item.currency,
+        "cost": item.cost,
+        "project_id": item.project_id,
+        "region": item.region,
+        "labels": item.labels,
+        "source": item.source,
+        "observed_at": item.observed_at.isoformat(),
     }
 
 

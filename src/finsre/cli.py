@@ -48,9 +48,19 @@ def build_parser() -> argparse.ArgumentParser:
     investigate_draft = investigate_sub.add_parser("draft-from-sku", help="Draft investigation context from one SKU")
     _add_sku_signal_args(investigate_draft)
     investigate_draft.set_defaults(func=cli_commands.investigate_sku_draft)
+    investigate_csv = investigate_sub.add_parser(
+        "draft-from-csv",
+        help="Draft investigations from local CSV billing rows",
+    )
+    _add_csv_feed_args(investigate_csv)
+    investigate_csv.set_defaults(func=cli_commands.investigate_csv_draft)
     investigate_run = investigate_sub.add_parser("run-from-sku", help="Run LLM investigation for one SKU")
     _add_sku_signal_args(investigate_run)
-    investigate_run.add_argument("--approve-llm", action="store_true", help="Explicitly approve sending context to LLM.")
+    investigate_run.add_argument(
+        "--approve-llm",
+        action="store_true",
+        help="Explicitly approve sending context to LLM.",
+    )
     investigate_run.set_defaults(func=cli_commands.investigate_sku_run)
 
     connectors = subparsers.add_parser("connectors", help="Inspect configured connectors")
@@ -59,8 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     connectors_list.set_defaults(func=cli_commands.list_connectors)
     connectors_check = connectors_sub.add_parser("check", help="Check connector compatibility")
     connectors_check.add_argument("--name", help="Connector name to check. Defaults to all connectors.")
+    connectors_check.add_argument("--path", help="Local CSV path when checking local-csv-billing.")
     connectors_check.add_argument("--live", action="store_true", help="Run lightweight live provider API probes.")
     connectors_check.set_defaults(func=cli_commands.check_connectors)
+    connectors_csv = connectors_sub.add_parser("preview-csv", help="Preview normalized cost rows from a local CSV")
+    _add_csv_feed_args(connectors_csv)
+    connectors_csv.set_defaults(func=cli_commands.preview_csv_costs)
 
     gcp = subparsers.add_parser("gcp", help="GCP connector commands")
     gcp_sub = gcp.add_subparsers(dest="gcp_command", required=True)
@@ -106,6 +120,22 @@ def _add_sku_signal_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cost", required=True, help="Observed cost for this SKU")
     parser.add_argument("--currency", default="USD", help="Cost currency")
     parser.add_argument("--project-id", help="Project/account id associated with the SKU")
+
+
+def _add_csv_feed_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--path", required=True, help="Path to a local CSV billing feed")
+    parser.add_argument("--limit", type=int, default=20, help="Maximum rows to process")
+    parser.add_argument("--currency", default="USD", help="Default currency when the CSV has no currency column")
+    parser.add_argument("--service-column", help="CSV column containing service name")
+    parser.add_argument("--sku-column", help="CSV column containing SKU or resource id")
+    parser.add_argument("--sku-description-column", help="CSV column containing SKU description")
+    parser.add_argument("--cost-column", help="CSV column containing cost")
+    parser.add_argument("--currency-column", help="CSV column containing currency")
+    parser.add_argument("--project-column", help="CSV column containing project or account id")
+    parser.add_argument("--region-column", help="CSV column containing region or zone")
+    parser.add_argument("--usage-amount-column", help="CSV column containing usage amount")
+    parser.add_argument("--usage-unit-column", help="CSV column containing usage unit")
+    parser.add_argument("--usage-start-date-column", help="CSV column containing usage start date")
 
 
 if __name__ == "__main__":

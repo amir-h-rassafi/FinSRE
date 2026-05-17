@@ -61,7 +61,17 @@ def test_components_list_outputs_deployable_boundaries() -> None:
 
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
-    assert [component["name"] for component in payload] == ["gcp-billing", "agent-router", "memory-store", "tracker"]
+    assert [component["name"] for component in payload] == [
+        "gcp-billing",
+        "local-csv-billing",
+        "asset-discovery",
+        "network-discovery",
+        "telemetry-discovery",
+        "change-discovery",
+        "agent-router",
+        "memory-store",
+        "tracker",
+    ]
 
 
 def test_gcp_billing_compatibility_event_outputs_event_envelope() -> None:
@@ -102,6 +112,29 @@ def test_discovery_plan_sku_outputs_probes_and_questions() -> None:
     assert payload["classification"]["domain"] == "network_egress"
     assert [probe["kind"] for probe in payload["probes"]] == ["network", "telemetry", "change"]
     assert payload["questions"][0]["id"] == "prod-api:traffic-intent"
+
+
+def test_investigate_draft_from_csv_runs_existing_agent(tmp_path) -> None:
+    csv_path = tmp_path / "billing.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "service,sku,cost,project,region",
+                "Compute Engine,egress-1,42.50,prod-api,europe-west1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(["investigate", "draft-from-csv", "--path", str(csv_path), "--limit", "1"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["connector"] == "local-csv-billing"
+    assert payload["count"] == 1
+    assert payload["drafts"][0]["classification"]["domain"] == "compute"
 
 
 def test_investigate_run_requires_approval() -> None:
