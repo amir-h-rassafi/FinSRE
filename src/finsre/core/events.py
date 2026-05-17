@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
@@ -31,7 +31,7 @@ class EventEnvelope:
     data: dict[str, Any]
     id: str = field(default_factory=lambda: str(uuid4()))
     specversion: str = "1.0"
-    time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    time: datetime = field(default_factory=lambda: datetime.now(UTC))
     subject: str | None = None
     datacontenttype: str = "application/json"
     dataschema: str | None = None

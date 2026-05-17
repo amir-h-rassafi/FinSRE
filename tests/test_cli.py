@@ -134,8 +134,9 @@ def test_investigate_draft_from_csv_runs_existing_agent(tmp_path) -> None:
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
     assert payload["connector"] == "local-csv-billing"
+    assert payload["input_count"] == 1
     assert payload["count"] == 1
-    assert payload["drafts"][0]["classification"]["domain"] == "compute"
+    assert payload["drafts"][0]["classification"]["domain"] == "network_egress"
 
 
 def test_investigate_run_from_csv_uses_approved_llm_path(fake_langgraph, tmp_path) -> None:
@@ -145,23 +146,28 @@ def test_investigate_run_from_csv_uses_approved_llm_path(fake_langgraph, tmp_pat
             [
                 "service,sku,cost,project,region",
                 "Compute Engine,Inter-region Egress,42.50,prod-api,europe-west1",
+                "Compute Engine,Inter-region Egress,42.50,prod-api,europe-west1",
             ]
         ),
         encoding="utf-8",
     )
+    llm = FakeLLM()
     stdout = StringIO()
 
     with (
-        patch("finsre.cli_commands.build_llm_client", return_value=FakeLLM()),
+        patch("finsre.cli_commands.build_llm_client", return_value=llm),
         patch("sys.stdout", stdout),
     ):
-        exit_code = main(["investigate", "run-from-csv", "--approve-llm", "--path", str(csv_path), "--limit", "1"])
+        exit_code = main(["investigate", "run-from-csv", "--approve-llm", "--path", str(csv_path), "--limit", "2"])
 
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
+    assert payload["input_count"] == 2
     assert payload["count"] == 1
+    assert llm.calls == 1
     assert payload["investigations"][0]["summary"] == "Fake investigation summary."
     assert payload["investigations"][0]["evidence"][0]["context"]["classification"]["domain"] == "network_egress"
+    assert payload["investigations"][0]["evidence"][0]["context"]["classification"]["signal"]["cost"] == "85.00"
 
 
 def test_investigate_run_from_csv_requires_approval(tmp_path) -> None:
@@ -227,5 +233,9 @@ def test_investigate_run_with_approval_fails_without_api_key(monkeypatch) -> Non
 
 
 class FakeLLM:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def complete(self, _messages):
+        self.calls += 1
         return LLMResponse(content="Fake investigation summary.", model="fake")

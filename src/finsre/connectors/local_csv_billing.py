@@ -134,9 +134,7 @@ class LocalCsvBillingConnector(Connector):
                 service=signal.service,
                 sku=signal.sku_id,
                 usage_start_date=(
-                    usage_date
-                    or _parse_date(_row_value(row, resolved.get("usage_start_date")))
-                    or date.today()
+                    usage_date or _parse_date(_row_value(row, resolved.get("usage_start_date"))) or date.today()
                 ),
                 currency=signal.currency,
                 cost=signal.cost,

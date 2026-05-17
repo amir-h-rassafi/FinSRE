@@ -1,6 +1,6 @@
 import os
 
-from finsre.errors import OptionalDependencyError
+from finsre.errors import LLMProviderError, OptionalDependencyError
 from finsre.llm.base import LLMClient, LLMMessage, LLMResponse, MissingLLMConfiguration
 
 
@@ -25,12 +25,29 @@ class OpenAILLMClient(LLMClient):
         self._model = model
 
     def complete(self, messages: list[LLMMessage]) -> LLMResponse:
-        response = self._client.responses.create(
-            model=self._model,
-            input=[{"role": message.role, "content": message.content} for message in messages],
-        )
-        return LLMResponse(content=response.output_text, model=self._model)
+        try:
+            response = self._client.responses.create(
+                model=self._model,
+                input=[{"role": message.role, "content": message.content} for message in messages],
+            )
+            return LLMResponse(content=response.output_text, model=self._model)
+        except Exception as exc:
+            raise LLMProviderError(f"OpenAI LLM call failed: {exc}") from exc
+        finally:
+            if _langsmith_tracing_enabled(os.environ):
+                _flush_langsmith_traces()
 
 
 def _langsmith_tracing_enabled(env: dict[str, str]) -> bool:
     return env.get("LANGSMITH_TRACING", "").lower() in {"1", "true", "yes", "on"}
+
+
+def _flush_langsmith_traces() -> None:
+    try:
+        from langsmith import Client
+    except ImportError:
+        return
+    try:
+        Client().flush()
+    except Exception:
+        return

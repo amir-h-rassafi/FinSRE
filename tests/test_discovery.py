@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from finsre.discovery.facts import ContextFact, FactSource
 from finsre.discovery.probes import ProbeKind, ProbePlanner
-from finsre.discovery.questions import QuestionPlanner
 from finsre.discovery.sku import BillingSkuSignal, SkuClassifier, SkuDomain
 from finsre.discovery.workflow import SkuDiscoveryWorkflow
 
@@ -21,6 +20,29 @@ def test_sku_classifier_identifies_network_egress() -> None:
     assert classification.domain == SkuDomain.NETWORK_EGRESS
     assert classification.confidence == 0.75
     assert "egress" in classification.reasons
+
+
+def test_sku_classifier_routes_gcp_service_families() -> None:
+    examples = [
+        ("Gemini API", SkuDomain.AI),
+        ("Cloud Pub/Sub", SkuDomain.MESSAGING),
+        ("Cloud Dataflow", SkuDomain.DATA_PROCESSING),
+        ("Security Command Center", SkuDomain.SECURITY),
+        ("Places API", SkuDomain.API_PLATFORM),
+        ("Cloud Run", SkuDomain.SERVERLESS),
+        ("Cloud Memorystore for Redis", SkuDomain.CACHE),
+        ("Cloud DNS", SkuDomain.DNS),
+    ]
+
+    for service, domain in examples:
+        signal = BillingSkuSignal(
+            service=service,
+            sku_id="sku-1",
+            sku_description="Standard usage",
+            cost=Decimal("1.00"),
+        )
+
+        assert SkuClassifier().classify(signal).domain == domain
 
 
 def test_probe_planner_maps_network_egress_to_network_telemetry_and_change() -> None:

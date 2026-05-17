@@ -76,7 +76,8 @@ def investigate_csv_draft(args: argparse.Namespace) -> dict[str, Any]:
     connector = local_csv_billing_connector(args)
     agent = InvestigationAgent()
     drafts = []
-    for signal in connector.collect_sku_signals(limit=args.limit):
+    signals = connector.collect_sku_signals(limit=args.limit)
+    for signal in _aggregate_sku_signals(signals):
         draft = agent.draft_from_sku(signal)
         drafts.append(
             {
@@ -90,6 +91,7 @@ def investigate_csv_draft(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "connector": connector.name,
         "path": str(connector.path),
+        "input_count": len(signals),
         "count": len(drafts),
         "drafts": drafts,
     }
@@ -101,11 +103,13 @@ def investigate_csv_run(args: argparse.Namespace) -> dict[str, Any]:
     connector = local_csv_billing_connector(args)
     agent = _langgraph_investigation_agent()
     investigations = []
-    for signal in connector.collect_sku_signals(limit=args.limit):
+    signals = connector.collect_sku_signals(limit=args.limit)
+    for signal in _aggregate_sku_signals(signals):
         investigations.append(_agent_result_to_dict(agent.run_from_sku(signal)))
     return {
         "connector": connector.name,
         "path": str(connector.path),
+        "input_count": len(signals),
         "count": len(investigations),
         "investigations": investigations,
     }
@@ -215,6 +219,32 @@ def _agent_result_to_dict(result: AgentResult) -> dict[str, Any]:
         "confidence": result.confidence,
         "evidence": list(result.evidence),
     }
+
+
+def _aggregate_sku_signals(signals: list[BillingSkuSignal]) -> list[BillingSkuSignal]:
+    buckets: dict[tuple[str, str, str, str | None, str], tuple[BillingSkuSignal, int]] = {}
+    for signal in signals:
+        key = (signal.service, signal.sku_id, signal.sku_description, signal.project_id, signal.currency)
+        if key not in buckets:
+            buckets[key] = (signal, 1)
+            continue
+
+        current, count = buckets[key]
+        buckets[key] = (
+            BillingSkuSignal(
+                service=current.service,
+                sku_id=current.sku_id,
+                sku_description=current.sku_description,
+                cost=current.cost + signal.cost,
+                currency=current.currency,
+                project_id=current.project_id,
+                usage_amount=current.usage_amount,
+                usage_unit=current.usage_unit,
+                labels={**current.labels, "source_signal_count": str(count + 1)},
+            ),
+            count + 1,
+        )
+    return [signal for signal, _ in buckets.values()]
 
 
 def _sku_signal_from_args(args: argparse.Namespace) -> BillingSkuSignal:

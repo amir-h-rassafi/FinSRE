@@ -14,5 +14,9 @@ class OptionalDependencyError(FinSREError):
     """Raised when an optional integration dependency is not installed."""
 
 
+class LLMProviderError(FinSREError):
+    """Raised when an approved LLM provider call fails."""
+
+
 class UnsupportedProviderError(FinSREError):
     """Raised when a configured provider is not supported."""

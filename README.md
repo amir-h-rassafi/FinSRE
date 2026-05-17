@@ -350,6 +350,7 @@ export LANGSMITH_PROJECT=finsre-local
 ```
 
 FinSRE uses LangGraph for the approved investigation path and wraps the raw OpenAI SDK with LangSmith when tracing is enabled. This gives visibility into the LLM call without making deterministic discovery depend on a hosted tracing service.
+The CLI flushes LangSmith traces before exit so short runs and failed provider calls are more likely to appear in the selected LangSmith project.
 
 Draft without LLM:
 
@@ -599,6 +600,7 @@ Useful commands:
 GCP Catalog API pricing periods must stay within one calendar month and cannot be in the future. FinSRE treats `start_date` as inclusive and `end_date` as exclusive.
 
 The local CSV connector accepts either row-shaped billing feeds with service, SKU, and cost columns, or daily matrix feeds with `Service`, `SKU`, and `YYYY-MM-DD` cost columns. Column names can be overridden with flags such as `--service-column`, `--sku-column`, and `--cost-column`.
+CSV investigation commands group matching service/SKU/project/currency rows before drafting or calling the approved LLM path.
 
 ### Connector Compatibility
 

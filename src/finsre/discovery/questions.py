@@ -31,7 +31,10 @@ class QuestionPlanner:
                 Question(
                     id=f"{project_id}:traffic-intent",
                     entity_id=project_id,
-                    text=f"Is the billed network traffic for project `{project_id}` expected for HA, migration, or customer traffic?",
+                    text=(
+                        f"Is the billed network traffic for project `{project_id}` expected for HA, "
+                        "migration, or customer traffic?"
+                    ),
                     reason="Network egress optimization depends on whether cross-boundary traffic is intentional.",
                 ),
             )

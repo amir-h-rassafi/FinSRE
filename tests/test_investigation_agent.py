@@ -1,4 +1,5 @@
 import sys
+import warnings
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -53,3 +54,23 @@ def test_langgraph_investigation_agent_raises_repo_error_without_langgraph(monke
             assert "Install the LLM extra" in str(exc)
         else:
             raise AssertionError("expected OptionalDependencyError")
+
+
+def test_langgraph_dependency_warning_is_suppressed(fake_langgraph) -> None:
+    real_import = __import__
+
+    def noisy_import(name, *args, **kwargs):
+        if name == "langgraph.graph":
+            warnings.warn(
+                "The default value of `allowed_objects` will change in a future version.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return real_import(name, *args, **kwargs)
+
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        with patch("builtins.__import__", side_effect=noisy_import):
+            LangGraphInvestigationAgent(llm_client=FakeLLM())
+
+    assert seen == []

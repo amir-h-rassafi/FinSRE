@@ -14,6 +14,15 @@ class SkuDomain(StrEnum):
     BIGQUERY = "bigquery"
     GKE = "gke"
     SQL = "sql"
+    SERVERLESS = "serverless"
+    MESSAGING = "messaging"
+    DATA_PROCESSING = "data_processing"
+    AI = "ai"
+    SECURITY = "security"
+    DEVELOPER_TOOLS = "developer_tools"
+    API_PLATFORM = "api_platform"
+    CACHE = "cache"
+    DNS = "dns"
     UNKNOWN = "unknown"
 
 
@@ -57,6 +66,20 @@ class SkuClassifier:
         (SkuDomain.STORAGE, ("storage", "snapshot", "persistent disk", "ssd", "hdd")),
         (SkuDomain.COMPUTE, ("compute", "instance", "core", "ram", "cpu")),
     )
+    _service_rules: tuple[tuple[SkuDomain, tuple[str, ...]], ...] = (
+        (SkuDomain.SERVERLESS, ("cloud run", "cloud functions", "app engine", "cloud scheduler")),
+        (SkuDomain.MESSAGING, ("cloud pub/sub", "pub/sub")),
+        (SkuDomain.DATA_PROCESSING, ("cloud dataflow", "dataproc", "datastream")),
+        (SkuDomain.AI, ("gemini api", "vertex ai")),
+        (
+            SkuDomain.SECURITY,
+            ("security command center", "secret manager", "key management service", "kms", "certificate manager"),
+        ),
+        (SkuDomain.DEVELOPER_TOOLS, ("cloud build", "artifact registry", "vm manager")),
+        (SkuDomain.API_PLATFORM, ("places api", "geocoding api", "address validation api")),
+        (SkuDomain.CACHE, ("memorystore", "redis")),
+        (SkuDomain.DNS, ("cloud dns",)),
+    )
 
     def classify(self, signal: BillingSkuSignal) -> SkuClassification:
         text = f"{signal.service} {signal.sku_description}".lower()
@@ -64,4 +87,9 @@ class SkuClassifier:
             matched = tuple(keyword for keyword in keywords if keyword in text)
             if matched:
                 return SkuClassification(signal=signal, domain=domain, confidence=0.75, reasons=matched)
+        service = signal.service.lower()
+        for domain, services in self._service_rules:
+            matched = tuple(name for name in services if name in service)
+            if matched:
+                return SkuClassification(signal=signal, domain=domain, confidence=0.55, reasons=matched)
         return SkuClassification(signal=signal, domain=SkuDomain.UNKNOWN, confidence=0.2)

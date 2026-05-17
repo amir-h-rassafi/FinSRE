@@ -52,6 +52,7 @@ def test_component_catalog_lists_deployable_boundaries() -> None:
     names = [component.name for component in components]
     assert names == [
         "gcp-billing",
+        "local-csv-billing",
         "asset-discovery",
         "network-discovery",
         "telemetry-discovery",

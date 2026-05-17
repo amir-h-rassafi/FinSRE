@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -61,7 +61,7 @@ class TimePeriod:
 
 
 def _utc_midnight_rfc3339(value: date) -> str:
-    return datetime.combine(value, time.min, tzinfo=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.combine(value, time.min, tzinfo=UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -77,4 +77,4 @@ class CostLineItem:
     region: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
     source: str = ""
-    observed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    observed_at: datetime = field(default_factory=lambda: datetime.now(UTC))

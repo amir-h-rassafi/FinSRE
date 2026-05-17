@@ -1,3 +1,4 @@
+import warnings
 from typing import Any, TypedDict
 
 from finsre.agents.base import AgentCapability, AgentResult
@@ -40,7 +41,13 @@ class LangGraphInvestigationAgent:
 
     def _build_graph(self):
         try:
-            from langgraph.graph import END, StateGraph
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"The default value of `allowed_objects` will change.*",
+                    category=Warning,
+                )
+                from langgraph.graph import END, StateGraph
         except ImportError as exc:
             raise OptionalDependencyError("Install the LLM extra first: pip install '.[llm]'") from exc
 

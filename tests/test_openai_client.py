@@ -2,7 +2,7 @@ import sys
 import types
 from unittest.mock import patch
 
-from finsre.errors import OptionalDependencyError
+from finsre.errors import LLMProviderError, OptionalDependencyError
 from finsre.llm.openai_client import OpenAILLMClient
 
 
@@ -13,9 +13,12 @@ class FakeResponse:
 class FakeResponses:
     def __init__(self) -> None:
         self.requests = []
+        self.error = None
 
     def create(self, **kwargs):
         self.requests.append(kwargs)
+        if self.error is not None:
+            raise self.error
         return FakeResponse()
 
 
@@ -36,6 +39,23 @@ def test_openai_client_wraps_sdk_when_langsmith_tracing_is_enabled(monkeypatch) 
 
     assert response.content == "traceable response"
     assert client._client.was_wrapped is True
+
+
+def test_openai_client_flushes_langsmith_after_provider_error(monkeypatch) -> None:
+    install_fake_openai(monkeypatch)
+    fake_langsmith = install_fake_langsmith(monkeypatch)
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+
+    client = OpenAILLMClient(api_key="secret", model="gpt-test")
+    client._client.responses.error = RuntimeError("429 insufficient_quota")
+
+    try:
+        client.complete([])
+    except LLMProviderError as exc:
+        assert "429 insufficient_quota" in str(exc)
+    else:
+        raise AssertionError("expected LLMProviderError")
+    assert fake_langsmith.flush_count == 1
 
 
 def test_openai_client_requires_langsmith_when_tracing_is_enabled(monkeypatch) -> None:
@@ -70,10 +90,18 @@ def install_fake_langsmith(monkeypatch) -> None:
     langsmith_module = types.ModuleType("langsmith")
     wrappers_module = types.ModuleType("langsmith.wrappers")
 
+    class FakeLangSmithClient:
+        flush_count = 0
+
+        def flush(self):
+            type(self).flush_count += 1
+
     def wrap_openai(client):
         client.was_wrapped = True
         return client
 
+    langsmith_module.Client = FakeLangSmithClient
     wrappers_module.wrap_openai = wrap_openai
     monkeypatch.setitem(sys.modules, "langsmith", langsmith_module)
     monkeypatch.setitem(sys.modules, "langsmith.wrappers", wrappers_module)
+    return FakeLangSmithClient
