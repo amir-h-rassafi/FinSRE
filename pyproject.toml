@@ -20,7 +20,9 @@ llm = [
     "openai>=1.0,<2",
 ]
 dev = [
+    "pre-commit>=3.7,<4",
     "pytest>=8,<9",
+    "ruff>=0.5,<1",
 ]
 
 [project.scripts]
@@ -32,3 +34,19 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = ["-m", "unit"]
+markers = [
+    "unit: deterministic tests with no live cloud, network, or LLM calls",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

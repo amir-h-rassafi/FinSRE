@@ -7,41 +7,29 @@ from typing import Any
 
 class CloudProvider(StrEnum):
     GCP = "gcp"
-    AWS = "aws"
-    AZURE = "azure"
-    GENERIC = "generic"
-
-
-class ConnectorStatus(StrEnum):
-    CONFIGURED = "configured"
-    NEEDS_CONFIGURATION = "needs_configuration"
-    UNAVAILABLE = "unavailable"
-
-
-class CompatibilityStatus(StrEnum):
-    COMPATIBLE = "compatible"
-    NEEDS_CONFIGURATION = "needs_configuration"
-    INCOMPATIBLE = "incompatible"
-    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
-class ApiContract:
-    provider_api: str
-    provider_api_version: str
-    connector_contract_version: str
-    min_supported_contract_version: str
-    docs_url: str
-    stability: str = "public"
+class ConnectorContract:
+    """Small compatibility contract for connector outputs.
+
+    This is a FinSRE contract, not an upstream cloud standard.
+    """
+
+    version: str
+    upstream: str
+    schema: str
+    docs_url: str | None = None
 
 
 @dataclass(frozen=True)
 class CompatibilityReport:
     connector: str
-    status: CompatibilityStatus
-    contract: ApiContract
+    ok: bool
+    contract: ConnectorContract
     checked_live: bool
-    messages: tuple[str, ...] = ()
+    problems: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,9 +37,8 @@ class ConnectorDescriptor:
     name: str
     provider: CloudProvider
     source_type: str
-    status: ConnectorStatus
     capabilities: tuple[str, ...]
-    contract: ApiContract
+    contract: ConnectorContract
     details: dict[str, Any] = field(default_factory=dict)
 
 
@@ -66,11 +53,15 @@ class TimePeriod:
 
     @property
     def start_time_rfc3339(self) -> str:
-        return datetime.combine(self.start_date, time.min, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        return _utc_midnight_rfc3339(self.start_date)
 
     @property
     def end_time_rfc3339(self) -> str:
-        return datetime.combine(self.end_date, time.min, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        return _utc_midnight_rfc3339(self.end_date)
+
+
+def _utc_midnight_rfc3339(value: date) -> str:
+    return datetime.combine(value, time.min, tzinfo=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)

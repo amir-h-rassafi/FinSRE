@@ -19,10 +19,12 @@ The tool should not only say "cost went up." It should answer:
 - What evidence supports the hypothesis?
 - What action should a human or automation take next?
 - How confident are we, given the data available?
+- Why we are not confident on some change or we don't know where they come from?(Point to lack of some metric, setup, etc, etc)
 
 ## Data Sources
 
-FinSRE should support multiple hooks and connectors. Different organizations will expose different levels of data, so recommendations and investigations must degrade gracefully.
+FinSRE should support multiple hooks and connectors.
+Different organizations will expose different levels of data, so recommendations and investigations must degrade gracefully.
 
 ### Initial GCP Sources
 
@@ -502,10 +504,22 @@ The current implementation is a small CLI agent with one concrete connector: `gc
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[gcp,dev]"
+pre-commit install
 export FINSRE_GCP_BILLING_ACCOUNT="012345-6789AB-CDEF01"
 export FINSRE_GCP_BILLING_CURRENCY="USD"
 finsre connectors list
 ```
+
+Quality checks:
+
+```bash
+ruff check .
+ruff format --check .
+pytest
+pre-commit run --all-files
+```
+
+All tests in `tests/` are unit tests. They must not call live cloud APIs, live LLM providers, or the network. Tests that need cloud, network, or provider credentials should live outside the unit suite until an explicit integration-test path exists.
 
 Useful commands:
 
@@ -524,12 +538,12 @@ GCP Catalog API pricing periods must stay within one calendar month and cannot b
 
 Each connector should publish compatibility metadata:
 
-- Provider API name and version, for example `cloudbilling.googleapis.com` `v1`.
+- Upstream API family, for example `cloudbilling.googleapis.com/v1`.
 - FinSRE connector contract version, for example `1.0`.
-- Minimum supported connector contract version.
+- Output/event schema, for example `finsre.gcp_billing.v1`.
 - Capability flags such as `billing_account_discovery` or `sku_pricing_by_period`.
-- Documentation URL for the upstream API.
-- Compatibility status from a local check and, optionally, a live provider API probe.
+- Optional documentation URL for the upstream API.
+- Compatibility result from a local contract check and, optionally, a live provider API probe.
 
 This allows the router and future agents to know which connector capabilities are safe to use. It also gives operators a quick way to detect unsupported, misconfigured, or degraded integrations before an investigation depends on them.
 

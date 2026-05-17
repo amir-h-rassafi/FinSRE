@@ -8,7 +8,7 @@ from finsre.core.events import EventEnvelope
 from finsre.discovery.probes import DiscoveryProbe
 from finsre.discovery.questions import Question
 from finsre.discovery.sku import BillingSkuSignal, SkuClassification
-from finsre.models import ApiContract, CompatibilityReport, ConnectorDescriptor
+from finsre.models import CompatibilityReport, ConnectorContract, ConnectorDescriptor
 
 
 def connector_to_dict(descriptor: ConnectorDescriptor) -> dict[str, Any]:
@@ -16,7 +16,6 @@ def connector_to_dict(descriptor: ConnectorDescriptor) -> dict[str, Any]:
         "name": descriptor.name,
         "provider": descriptor.provider.value,
         "source_type": descriptor.source_type,
-        "status": descriptor.status.value,
         "capabilities": list(descriptor.capabilities),
         "contract": contract_to_dict(descriptor.contract),
         "details": descriptor.details,
@@ -26,21 +25,20 @@ def connector_to_dict(descriptor: ConnectorDescriptor) -> dict[str, Any]:
 def compatibility_to_dict(report: CompatibilityReport) -> dict[str, Any]:
     return {
         "connector": report.connector,
-        "status": report.status.value,
+        "ok": report.ok,
         "checked_live": report.checked_live,
         "contract": contract_to_dict(report.contract),
-        "messages": list(report.messages),
+        "problems": list(report.problems),
+        "warnings": list(report.warnings),
     }
 
 
-def contract_to_dict(contract: ApiContract) -> dict[str, Any]:
+def contract_to_dict(contract: ConnectorContract) -> dict[str, Any]:
     return {
-        "provider_api": contract.provider_api,
-        "provider_api_version": contract.provider_api_version,
-        "connector_contract_version": contract.connector_contract_version,
-        "min_supported_contract_version": contract.min_supported_contract_version,
+        "version": contract.version,
+        "upstream": contract.upstream,
+        "schema": contract.schema,
         "docs_url": contract.docs_url,
-        "stability": contract.stability,
     }
 
 

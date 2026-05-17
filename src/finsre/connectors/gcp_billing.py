@@ -8,12 +8,10 @@ from finsre.core.events import EventEnvelope, EventType, new_event
 from finsre.core.serialization import compatibility_to_dict
 from finsre.errors import OptionalDependencyError
 from finsre.models import (
-    ApiContract,
     CloudProvider,
     CompatibilityReport,
-    CompatibilityStatus,
+    ConnectorContract,
     ConnectorDescriptor,
-    ConnectorStatus,
     TimePeriod,
 )
 
@@ -55,13 +53,17 @@ class GcpBillingConnector(Connector):
 
     name = "gcp-billing"
     base_url = "https://cloudbilling.googleapis.com"
-    contract = ApiContract(
-        provider_api="cloudbilling.googleapis.com",
-        provider_api_version="v1",
-        connector_contract_version="1.0",
-        min_supported_contract_version="1.0",
+    expected_contract = ConnectorContract(
+        version="1.0",
+        upstream="cloudbilling.googleapis.com/v1",
+        schema="finsre.gcp_billing.v1",
         docs_url="https://cloud.google.com/billing/docs/reference/rest",
-        stability="public_ga",
+    )
+    contract = ConnectorContract(
+        version="1.0",
+        upstream="cloudbilling.googleapis.com/v1",
+        schema="finsre.gcp_billing.v1",
+        docs_url="https://cloud.google.com/billing/docs/reference/rest",
     )
 
     def __init__(
@@ -85,7 +87,6 @@ class GcpBillingConnector(Connector):
             name=self.name,
             provider=CloudProvider.GCP,
             source_type="cloud_billing_api",
-            status=ConnectorStatus.CONFIGURED,
             capabilities=(
                 "billing_account_discovery",
                 "project_billing_discovery",
@@ -97,34 +98,41 @@ class GcpBillingConnector(Connector):
         )
 
     def check_compatibility(self, live: bool = False) -> CompatibilityReport:
-        messages = [
-            "Connector contract 1.0 targets Cloud Billing API v1.",
-            "Historical usage-cost line items are not available from this API family.",
-        ]
-        status = CompatibilityStatus.COMPATIBLE
+        problems = list(self._contract_problems())
+        warnings = ["Historical usage-cost line items are not available from this API family."]
 
         if live:
             try:
                 self.list_billing_accounts()
             except Exception as exc:
-                status = CompatibilityStatus.UNKNOWN
-                messages.append(f"Live Cloud Billing API probe failed: {exc}")
-            else:
-                messages.append("Live Cloud Billing API probe succeeded.")
+                problems.append(f"Live Cloud Billing API probe failed: {exc}")
 
         return CompatibilityReport(
             connector=self.name,
-            status=status,
+            ok=not problems,
             contract=self.contract,
             checked_live=live,
-            messages=tuple(messages),
+            problems=tuple(problems),
+            warnings=tuple(warnings),
         )
+
+    def _contract_problems(self) -> tuple[str, ...]:
+        problems: list[str] = []
+        if self.contract.version != self.expected_contract.version:
+            problems.append(
+                f"Expected connector contract version {self.expected_contract.version}, got {self.contract.version}."
+            )
+        if self.contract.upstream != self.expected_contract.upstream:
+            problems.append(f"Expected upstream {self.expected_contract.upstream}, got {self.contract.upstream}.")
+        if self.contract.schema != self.expected_contract.schema:
+            problems.append(f"Expected schema {self.expected_contract.schema}, got {self.contract.schema}.")
+        return tuple(problems)
 
     def manifest(self) -> ComponentManifest:
         return ComponentManifest(
             name=self.name,
             kind=ComponentKind.CONNECTOR,
-            version=self.contract.connector_contract_version,
+            version=self.contract.version,
             output_events=(
                 EventType.CONNECTOR_COMPATIBILITY_CHECKED.value,
                 EventType.BILLING_ACCOUNT_DISCOVERED.value,

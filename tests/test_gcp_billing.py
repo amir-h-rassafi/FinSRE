@@ -1,7 +1,7 @@
 from datetime import date
 
 from finsre.connectors.gcp_billing import GcpBillingConnector
-from finsre.models import CompatibilityStatus, ConnectorStatus, TimePeriod
+from finsre.models import ConnectorContract, TimePeriod
 
 
 class FakeTransport:
@@ -20,12 +20,11 @@ def test_describe_reports_api_connector_capabilities() -> None:
     descriptor = connector.describe()
 
     assert descriptor.name == "gcp-billing"
-    assert descriptor.status == ConnectorStatus.CONFIGURED
     assert descriptor.source_type == "cloud_billing_api"
     assert "sku_pricing_by_period" in descriptor.capabilities
-    assert descriptor.contract.provider_api == "cloudbilling.googleapis.com"
-    assert descriptor.contract.provider_api_version == "v1"
-    assert descriptor.contract.connector_contract_version == "1.0"
+    assert descriptor.contract.upstream == "cloudbilling.googleapis.com/v1"
+    assert descriptor.contract.schema == "finsre.gcp_billing.v1"
+    assert descriptor.contract.version == "1.0"
 
 
 def test_check_compatibility_reports_contract_without_live_probe() -> None:
@@ -34,10 +33,11 @@ def test_check_compatibility_reports_contract_without_live_probe() -> None:
     report = connector.check_compatibility()
 
     assert report.connector == "gcp-billing"
-    assert report.status == CompatibilityStatus.COMPATIBLE
+    assert report.ok is True
     assert report.checked_live is False
-    assert report.contract.provider_api_version == "v1"
-    assert "Cloud Billing API v1" in report.messages[0]
+    assert report.contract.upstream == "cloudbilling.googleapis.com/v1"
+    assert report.problems == ()
+    assert "Historical usage-cost line items" in report.warnings[0]
 
 
 def test_check_compatibility_can_run_live_probe_with_injected_transport() -> None:
@@ -47,10 +47,20 @@ def test_check_compatibility_can_run_live_probe_with_injected_transport() -> Non
 
     report = connector.check_compatibility(live=True)
 
-    assert report.status == CompatibilityStatus.COMPATIBLE
+    assert report.ok is True
     assert report.checked_live is True
-    assert report.messages[-1] == "Live Cloud Billing API probe succeeded."
+    assert report.problems == ()
     assert transport.calls[0][0] == "/v1/billingAccounts"
+
+
+def test_check_compatibility_detects_contract_mismatch() -> None:
+    class BrokenContractConnector(GcpBillingConnector):
+        contract = ConnectorContract(version="2.0", upstream="wrong/v9", schema="wrong.schema")
+
+    report = BrokenContractConnector().check_compatibility()
+
+    assert report.ok is False
+    assert len(report.problems) == 3
 
 
 def test_manifest_describes_deployable_connector_boundary() -> None:
@@ -72,7 +82,7 @@ def test_compatibility_event_uses_normalized_envelope() -> None:
     assert event.type == "finsre.connector.compatibility.checked"
     assert event.source == "connector/gcp-billing"
     assert event.subject == "gcp-billing"
-    assert event.data["status"] == "compatible"
+    assert event.data["ok"] is True
 
 
 def test_preview_api_calls_include_period() -> None:

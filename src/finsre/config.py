@@ -1,4 +1,5 @@
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -13,13 +14,17 @@ class Settings:
     llm_model: str = "gpt-4.1-mini"
     openai_api_key: str | None = None
 
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> "Settings":
+        return cls(
+            environment=env.get("FINSRE_ENVIRONMENT", "local"),
+            gcp_billing_account=env.get("FINSRE_GCP_BILLING_ACCOUNT"),
+            gcp_billing_currency=env.get("FINSRE_GCP_BILLING_CURRENCY", "USD"),
+            llm_provider=env.get("FINSRE_LLM_PROVIDER", "openai"),
+            llm_model=env.get("FINSRE_LLM_MODEL", "gpt-4.1-mini"),
+            openai_api_key=env.get("OPENAI_API_KEY"),
+        )
+
 
 def get_settings() -> Settings:
-    return Settings(
-        environment=os.getenv("FINSRE_ENVIRONMENT", "local"),
-        gcp_billing_account=os.getenv("FINSRE_GCP_BILLING_ACCOUNT"),
-        gcp_billing_currency=os.getenv("FINSRE_GCP_BILLING_CURRENCY", "USD"),
-        llm_provider=os.getenv("FINSRE_LLM_PROVIDER", "openai"),
-        llm_model=os.getenv("FINSRE_LLM_MODEL", "gpt-4.1-mini"),
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
-    )
+    return Settings.from_env(os.environ)

@@ -48,9 +48,9 @@ def test_connectors_check_outputs_compatibility_report() -> None:
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
     assert payload[0]["connector"] == "gcp-billing"
-    assert payload[0]["status"] == "compatible"
-    assert payload[0]["contract"]["provider_api"] == "cloudbilling.googleapis.com"
-    assert payload[0]["contract"]["provider_api_version"] == "v1"
+    assert payload[0]["ok"] is True
+    assert payload[0]["contract"]["upstream"] == "cloudbilling.googleapis.com/v1"
+    assert payload[0]["contract"]["schema"] == "finsre.gcp_billing.v1"
 
 
 def test_components_list_outputs_deployable_boundaries() -> None:
