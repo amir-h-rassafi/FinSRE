@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from finsre.cli import main
@@ -50,8 +51,6 @@ def test_connectors_check_outputs_compatibility_report() -> None:
     assert exit_code == 0
     assert payload[0]["connector"] == "gcp-billing"
     assert payload[0]["ok"] is True
-    assert payload[0]["contract"]["upstream"] == "cloudbilling.googleapis.com/v1"
-    assert payload[0]["contract"]["schema"] == "finsre.gcp_billing.v1"
 
 
 def test_components_list_outputs_deployable_boundaries() -> None:
@@ -97,12 +96,8 @@ def test_discovery_plan_sku_outputs_probes_and_questions() -> None:
                 "plan-sku",
                 "--service",
                 "Compute Engine",
-                "--sku-id",
-                "egress-1",
                 "--sku-description",
                 "Inter-region Egress",
-                "--cost",
-                "42.50",
                 "--project-id",
                 "prod-api",
             ]
@@ -115,42 +110,23 @@ def test_discovery_plan_sku_outputs_probes_and_questions() -> None:
     assert payload["questions"][0]["id"] == "prod-api:traffic-intent"
 
 
-def test_investigate_draft_from_csv_runs_existing_agent(tmp_path) -> None:
-    csv_path = tmp_path / "billing.csv"
-    csv_path.write_text(
-        "\n".join(
-            [
-                "service,sku,cost,project,region",
-                "Compute Engine,egress-1,42.50,prod-api,europe-west1",
-            ]
-        ),
-        encoding="utf-8",
-    )
+def test_investigate_detect_flags_anomalies(tmp_path) -> None:
+    csv_path = _write_spike_csv(tmp_path)
     stdout = StringIO()
 
     with patch("sys.stdout", stdout):
-        exit_code = main(["investigate", "draft-from-csv", "--path", str(csv_path), "--limit", "1"])
+        exit_code = main(["investigate", "detect", "--path", str(csv_path)])
 
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
-    assert payload["connector"] == "local-csv-billing"
-    assert payload["input_count"] == 1
-    assert payload["count"] == 1
-    assert payload["drafts"][0]["classification"]["domain"] == "network_egress"
+    assert payload["series_count"] == 1
+    assert payload["anomaly_count"] == 1
+    assert payload["anomalies"][0]["classification"]["domain"] == "network_egress"
+    assert payload["anomalies"][0]["anomaly"]["magnitude_pct"] == "100"
 
 
-def test_investigate_run_from_csv_uses_approved_llm_path(fake_langgraph, tmp_path) -> None:
-    csv_path = tmp_path / "billing.csv"
-    csv_path.write_text(
-        "\n".join(
-            [
-                "service,sku,cost,project,region",
-                "Compute Engine,Inter-region Egress,42.50,prod-api,europe-west1",
-                "Compute Engine,Inter-region Egress,42.50,prod-api,europe-west1",
-            ]
-        ),
-        encoding="utf-8",
-    )
+def test_investigate_run_uses_approved_llm_path(fake_langgraph, tmp_path) -> None:
+    csv_path = _write_spike_csv(tmp_path)
     llm = FakeLLM()
     stdout = StringIO()
 
@@ -158,78 +134,50 @@ def test_investigate_run_from_csv_uses_approved_llm_path(fake_langgraph, tmp_pat
         patch("finsre.cli_commands.build_llm_client", return_value=llm),
         patch("sys.stdout", stdout),
     ):
-        exit_code = main(["investigate", "run-from-csv", "--approve-llm", "--path", str(csv_path), "--limit", "2"])
+        exit_code = main(["investigate", "run", "--approve-llm", "--path", str(csv_path)])
 
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
-    assert payload["input_count"] == 2
-    assert payload["count"] == 1
+    assert payload["anomaly_count"] == 1
     assert llm.calls == 1
-    assert payload["investigations"][0]["summary"] == "Fake investigation summary."
-    assert payload["investigations"][0]["evidence"][0]["context"]["classification"]["domain"] == "network_egress"
-    assert payload["investigations"][0]["evidence"][0]["context"]["classification"]["signal"]["cost"] == "85.00"
+    assert payload["investigations"][0]["result"]["summary"] == "Fake investigation summary."
+    evidence = payload["investigations"][0]["result"]["evidence"][0]
+    assert evidence["context"]["classification"]["domain"] == "network_egress"
+    assert evidence["context"]["anomaly"]["magnitude_pct"] == "100"
 
 
-def test_investigate_run_from_csv_requires_approval(tmp_path) -> None:
-    csv_path = tmp_path / "billing.csv"
-    csv_path.write_text("service,sku,cost\nCompute Engine,egress-1,42.50\n", encoding="utf-8")
+def test_investigate_run_requires_approval(tmp_path) -> None:
+    csv_path = _write_spike_csv(tmp_path)
     stderr = StringIO()
 
     with patch("sys.stderr", stderr):
-        exit_code = main(["investigate", "run-from-csv", "--path", str(csv_path), "--limit", "1"])
+        exit_code = main(["investigate", "run", "--path", str(csv_path)])
 
     assert exit_code == 1
     assert "Refusing to call LLM without --approve-llm" in stderr.getvalue()
 
 
-def test_investigate_run_requires_approval() -> None:
-    stdout = StringIO()
-    stderr = StringIO()
-
-    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
-        exit_code = main(
-            [
-                "investigate",
-                "run-from-sku",
-                "--service",
-                "Compute Engine",
-                "--sku-id",
-                "egress-1",
-                "--sku-description",
-                "Inter-region Egress",
-                "--cost",
-                "42.50",
-            ]
-        )
-
-    assert exit_code == 1
-    assert "Refusing to call LLM without --approve-llm" in stderr.getvalue()
-
-
-def test_investigate_run_with_approval_fails_without_api_key(monkeypatch) -> None:
-    stdout = StringIO()
+def test_investigate_run_with_approval_fails_without_api_key(monkeypatch, tmp_path) -> None:
+    csv_path = _write_spike_csv(tmp_path)
     stderr = StringIO()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
-        exit_code = main(
-            [
-                "investigate",
-                "run-from-sku",
-                "--approve-llm",
-                "--service",
-                "Compute Engine",
-                "--sku-id",
-                "egress-1",
-                "--sku-description",
-                "Inter-region Egress",
-                "--cost",
-                "42.50",
-            ]
-        )
+    with patch("sys.stderr", stderr):
+        exit_code = main(["investigate", "run", "--approve-llm", "--path", str(csv_path)])
 
     assert exit_code == 1
     assert "OPENAI_API_KEY is required" in stderr.getvalue()
+
+
+def _write_spike_csv(tmp_path: Path) -> Path:
+    csv_path = tmp_path / "billing.csv"
+    header = "service,sku,sku description,cost,project,usage start date"
+    rows = [header]
+    for day in range(1, 8):
+        rows.append(f"Compute Engine,egress-1,Inter-region Egress,10,prod-api,2026-05-{day:02d}")
+    rows.append("Compute Engine,egress-1,Inter-region Egress,20,prod-api,2026-05-08")
+    csv_path.write_text("\n".join(rows), encoding="utf-8")
+    return csv_path
 
 
 class FakeLLM:

@@ -10,13 +10,12 @@ from finsre.connectors.base import Connector
 from finsre.core.components import ComponentKind, ComponentManifest, DeployMode
 from finsre.core.events import EventEnvelope, EventType, new_event
 from finsre.core.serialization import compatibility_to_dict
-from finsre.discovery.sku import BillingSkuSignal
 from finsre.errors import ConfigurationError
 from finsre.models import CloudProvider, CompatibilityReport, ConnectorContract, ConnectorDescriptor, CostLineItem
 
 
 class CsvBillingFormatError(ConfigurationError):
-    """Raised when a local CSV cannot be mapped to FinSRE billing signals."""
+    """Raised when a local CSV cannot be mapped to FinSRE cost line items."""
 
 
 @dataclass(frozen=True)
@@ -29,8 +28,6 @@ class CsvBillingColumnMap:
     project_id: str | None = None
     account_id: str | None = None
     region: str | None = None
-    usage_amount: str | None = None
-    usage_unit: str | None = None
     usage_start_date: str | None = None
 
 
@@ -39,7 +36,7 @@ class LocalCsvBillingConnector(Connector):
     contract = ConnectorContract(
         version="1.0",
         upstream="local-csv",
-        schema="finsre.billing_signal.v1",
+        schema="finsre.cost_line_item.v1",
     )
 
     _aliases: dict[str, tuple[str, ...]] = {
@@ -51,8 +48,6 @@ class LocalCsvBillingConnector(Connector):
         "project_id": ("project", "project id", "project_id", "resource id", "resource_id"),
         "account_id": ("account", "account id", "billing account", "billing_account"),
         "region": ("region", "region/zone", "location", "zone"),
-        "usage_amount": ("usage quantity", "usage amount", "usage_amount", "quantity"),
-        "usage_unit": ("usage unit", "usage_unit", "unit"),
         "usage_start_date": ("usage start date", "start date", "usage_start_time", "date"),
     }
 
@@ -78,7 +73,7 @@ class LocalCsvBillingConnector(Connector):
             name=self.name,
             provider=CloudProvider.GCP,
             source_type="local_csv",
-            capabilities=("sku_usage_feed", "cost_signal_feed"),
+            capabilities=("cost_line_item_feed",),
             contract=self.contract,
             details=details,
         )
@@ -127,32 +122,6 @@ class LocalCsvBillingConnector(Connector):
         )
 
     def collect_costs(self) -> Iterable[CostLineItem]:
-        for signal, row, resolved, usage_date in self._iter_signals_with_rows():
-            yield CostLineItem(
-                provider=CloudProvider.GCP,
-                account_id=_row_value(row, resolved.get("account_id")) or "local-csv",
-                service=signal.service,
-                sku=signal.sku_id,
-                usage_start_date=(
-                    usage_date or _parse_date(_row_value(row, resolved.get("usage_start_date"))) or date.today()
-                ),
-                currency=signal.currency,
-                cost=signal.cost,
-                project_id=signal.project_id,
-                region=signal.labels.get("region"),
-                labels=signal.labels,
-                source=self.name,
-            )
-
-    def collect_sku_signals(self, limit: int | None = None) -> tuple[BillingSkuSignal, ...]:
-        signals: list[BillingSkuSignal] = []
-        for signal, _, _, _ in self._iter_signals_with_rows():
-            signals.append(signal)
-            if limit is not None and len(signals) >= limit:
-                break
-        return tuple(signals)
-
-    def _iter_signals_with_rows(self) -> Iterable[tuple[BillingSkuSignal, dict[str, str], dict[str, str], date | None]]:
         rows = self._read_rows()
         resolved = self._resolve_columns(tuple(rows[0].keys()) if rows else ())
         date_columns = _date_columns(tuple(rows[0].keys()) if rows else ())
@@ -160,42 +129,40 @@ class LocalCsvBillingConnector(Connector):
             if not _row_value(row, resolved["service"]) or not _row_value(row, resolved["sku"]):
                 continue
             if "cost" in resolved:
-                yield self._signal_from_row(row, resolved, resolved["cost"], None), row, resolved, None
+                usage_date = _parse_date(_row_value(row, resolved.get("usage_start_date"))) or date.today()
+                cost = _optional_decimal(_row_value(row, resolved["cost"]))
+                if cost is None:
+                    continue
+                yield self._line_item(row, resolved, cost, usage_date)
                 continue
             for column in date_columns:
                 cost = _optional_decimal(_row_value(row, column))
                 if cost is None or cost == 0:
                     continue
-                usage_date = _parse_date(column)
-                yield self._signal_from_row(row, resolved, column, usage_date), row, resolved, usage_date
+                yield self._line_item(row, resolved, cost, _parse_date(column) or date.today())
 
-    def _signal_from_row(
+    def _line_item(
         self,
         row: dict[str, str],
         resolved: dict[str, str],
-        cost_column: str,
-        usage_date: date | None,
-    ) -> BillingSkuSignal:
+        cost: Decimal,
+        usage_date: date,
+    ) -> CostLineItem:
         service = _required_row_value(row, resolved["service"])
         sku = _required_row_value(row, resolved["sku"])
-        region = _row_value(row, resolved.get("region"))
-        usage_unit = _row_value(row, resolved.get("usage_unit"))
-        description = _row_value(row, resolved.get("sku_description")) or sku
-        labels = {"csv_source": str(self.path)}
-        if region:
-            labels["region"] = region
-        if usage_date:
-            labels["usage_start_date"] = usage_date.isoformat()
-        return BillingSkuSignal(
+        return CostLineItem(
+            provider=CloudProvider.GCP,
+            account_id=_row_value(row, resolved.get("account_id")) or "local-csv",
             service=service,
-            sku_id=sku,
-            sku_description=description,
-            cost=_decimal(_required_row_value(row, cost_column)),
+            sku=sku,
+            sku_description=_row_value(row, resolved.get("sku_description")),
+            usage_start_date=usage_date,
             currency=_row_value(row, resolved.get("currency")) or self.currency,
+            cost=cost,
             project_id=_row_value(row, resolved.get("project_id")),
-            usage_amount=_optional_decimal(_row_value(row, resolved.get("usage_amount"))),
-            usage_unit=usage_unit,
-            labels=labels,
+            region=_row_value(row, resolved.get("region")),
+            labels={"csv_source": str(self.path)},
+            source=self.name,
         )
 
     def _read_rows(self) -> list[dict[str, str]]:
@@ -231,7 +198,7 @@ class LocalCsvBillingConnector(Connector):
         problems: list[str] = []
         if self.contract.upstream != "local-csv":
             problems.append(f"Unsupported upstream for local CSV connector: {self.contract.upstream}.")
-        if self.contract.schema != "finsre.billing_signal.v1":
+        if self.contract.schema != "finsre.cost_line_item.v1":
             problems.append(f"Unsupported schema for local CSV connector: {self.contract.schema}.")
         return tuple(problems)
 

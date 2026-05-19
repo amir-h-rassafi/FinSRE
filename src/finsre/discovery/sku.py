@@ -1,5 +1,4 @@
-from dataclasses import dataclass, field
-from decimal import Decimal
+from dataclasses import dataclass
 from enum import StrEnum
 
 
@@ -27,21 +26,7 @@ class SkuDomain(StrEnum):
 
 
 @dataclass(frozen=True)
-class BillingSkuSignal:
-    service: str
-    sku_id: str
-    sku_description: str
-    cost: Decimal
-    currency: str = "USD"
-    project_id: str | None = None
-    usage_amount: Decimal | None = None
-    usage_unit: str | None = None
-    labels: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class SkuClassification:
-    signal: BillingSkuSignal
     domain: SkuDomain
     confidence: float
     reasons: tuple[str, ...] = ()
@@ -81,15 +66,15 @@ class SkuClassifier:
         (SkuDomain.DNS, ("cloud dns",)),
     )
 
-    def classify(self, signal: BillingSkuSignal) -> SkuClassification:
-        text = f"{signal.service} {signal.sku_description}".lower()
+    def classify(self, service: str, sku_description: str) -> SkuClassification:
+        text = f"{service} {sku_description}".lower()
         for domain, keywords in self._rules:
             matched = tuple(keyword for keyword in keywords if keyword in text)
             if matched:
-                return SkuClassification(signal=signal, domain=domain, confidence=0.75, reasons=matched)
-        service = signal.service.lower()
+                return SkuClassification(domain=domain, confidence=0.75, reasons=matched)
+        lowered_service = service.lower()
         for domain, services in self._service_rules:
-            matched = tuple(name for name in services if name in service)
+            matched = tuple(name for name in services if name in lowered_service)
             if matched:
-                return SkuClassification(signal=signal, domain=domain, confidence=0.55, reasons=matched)
-        return SkuClassification(signal=signal, domain=SkuDomain.UNKNOWN, confidence=0.2)
+                return SkuClassification(domain=domain, confidence=0.55, reasons=matched)
+        return SkuClassification(domain=SkuDomain.UNKNOWN, confidence=0.2)

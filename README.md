@@ -191,20 +191,22 @@ src/finsre/
   cli.py              # Argument parsing and process exit behavior only
   cli_commands.py     # CLI command handlers
   config.py           # Environment/config loading
-  core/               # Cloud-neutral events, ports, manifests, serialization
-  connectors/         # Provider connectors and connector registry
+  core/               # Cloud-neutral events, ports, manifests, serialization, cost-series normalization
+  connectors/         # Provider connectors; emit normalized `CostLineItem` rows
+  detectors/          # Anomaly detection over `CostSeries`
   discovery/          # SKU classification, probe planning, context facts, questions
-  agents/             # Agent contracts and router; LangGraph can plug in here
+  agents/             # Agent contracts and router; LangGraph plugs in here behind `InvestigationContext`
   memory/             # Memory/vector-store interfaces and early local stores
   tracker/            # Investigation and recommendation state tracking
 ```
 
 Rules for new code:
 
-- Put cloud/provider integration logic in `connectors`.
+- Put cloud/provider integration logic in `connectors`; the contract is `collect_costs() -> Iterable[CostLineItem]`.
+- Put anomaly detection in `detectors`. Each detector takes a `CostSeries` and returns an `Anomaly` or `None`.
 - Put SKU-to-probe routing and read-only context discovery in `discovery`.
 - Put durable product concepts in `core` or `models`.
-- Put agent orchestration behind `agents` so LangGraph remains replaceable.
+- Put agent orchestration behind `agents` so LangGraph remains replaceable. Agents consume `InvestigationContext`.
 - Put vector, retrieval, and long-term context code behind `memory`.
 - Put investigation/recommendation lifecycle state behind `tracker`.
 - Keep `cli.py` thin; it should parse arguments and delegate.
@@ -242,28 +244,25 @@ Rules for keeping this light:
 - Keep events as plain JSON-compatible data.
 - Version event schemas when another component depends on them.
 
-### SKU-Driven Discovery
+### Anomaly-First Pipeline
 
-Billing usage is the first routing signal. When a service/SKU has non-zero cost, FinSRE should classify that SKU and plan only the probes that can explain it.
+Billing rows are normalized into daily cost series, the detector flags abnormal movement, and discovery context is built per anomaly. The agent only ever sees a curated `InvestigationContext`.
 
 ```text
-billed SKU observed
-  -> classify SKU domain
-  -> plan read-only probes
-  -> collect context facts
-  -> ask questions only for missing intent
-  -> store facts/questions for future investigations
+CostLineItem rows
+  -> daily CostSeries per (service, sku, project, currency)
+  -> DailyBaselineDetector -> Anomaly | None
+  -> SkuDiscoveryWorkflow.plan_for_anomaly -> classification + probes + questions
+  -> InvestigationContext -> investigation agent (LLM or deterministic)
 ```
 
-Current discovery modules:
+Current modules:
 
-- `billing-sku-discovery`: future source of observed SKU usage rows.
-- `sku-classifier`: maps service/SKU descriptions into domains such as `network_egress`, `nat`, `load_balancer`, `bigquery`, `gke`, `logging`, `storage`, `compute`, and `sql`.
+- `core/series.to_daily_series`: groups `CostLineItem` rows into daily `CostSeries`.
+- `detectors/daily_baseline.DailyBaselineDetector`: percent-change vs trailing window; one anomaly per series.
+- `sku-classifier`: maps service/SKU descriptions into domains such as `network_egress`, `bigquery`, `gke`, `logging`, `storage`, `compute`.
 - `probe-planner`: maps domains to read-only probes.
-- `asset-discovery`: placeholder for Cloud Asset Inventory, Resource Manager, and ownership discovery.
-- `network-discovery`: placeholder for VPC, route, NAT, LB, VPN/Interconnect, and traffic-topology discovery.
-- `telemetry-discovery`: placeholder for Monitoring, logs, and usage metric validation.
-- `change-discovery`: placeholder for audit logs, deployments, and IaC changes.
+- `asset-discovery`, `network-discovery`, `telemetry-discovery`, `change-discovery`: placeholders for read-only probes.
 - `context-fact-store`: stores discovered facts with source, confidence, evidence, and expiry.
 - `question-planner`: asks humans only when missing intent blocks a recommendation.
 
@@ -272,16 +271,12 @@ Useful commands:
 ```bash
 finsre discovery classify-sku \
   --service "Compute Engine" \
-  --sku-id "egress-1" \
   --sku-description "Inter-region Egress" \
-  --cost 42.50 \
   --project-id prod-api
 
 finsre discovery plan-sku \
   --service "Compute Engine" \
-  --sku-id "egress-1" \
   --sku-description "Inter-region Egress" \
-  --cost 42.50 \
   --project-id prod-api
 ```
 
@@ -352,36 +347,16 @@ export LANGSMITH_PROJECT=finsre-local
 FinSRE uses LangGraph for the approved investigation path and wraps the raw OpenAI SDK with LangSmith when tracing is enabled. This gives visibility into the LLM call without making deterministic discovery depend on a hosted tracing service.
 The CLI flushes LangSmith traces before exit so short runs and failed provider calls are more likely to appear in the selected LangSmith project.
 
-Draft without LLM:
+Detect anomalies without calling the LLM:
 
 ```bash
-finsre investigate draft-from-sku \
-  --service "Compute Engine" \
-  --sku-id "egress-1" \
-  --sku-description "Inter-region Egress" \
-  --cost 42.50 \
-  --project-id prod-api
+finsre investigate detect --path ./billing.csv --threshold-pct 25 --baseline-days 7
 ```
 
-Run with explicit human approval:
+Run the full pipeline with explicit human approval:
 
 ```bash
-finsre investigate run-from-sku \
-  --approve-llm \
-  --service "Compute Engine" \
-  --sku-id "egress-1" \
-  --sku-description "Inter-region Egress" \
-  --cost 42.50 \
-  --project-id prod-api
-```
-
-Run approved investigations from a local billing CSV:
-
-```bash
-finsre investigate run-from-csv \
-  --approve-llm \
-  --path ./billing.csv \
-  --limit 5
+finsre investigate run --approve-llm --path ./billing.csv --threshold-pct 25 --baseline-days 7
 ```
 
 ## Normalized Data Model
@@ -553,16 +528,9 @@ PYTHONPATH=src python3 -m finsre.cli connectors list
 PYTHONPATH=src python3 -m finsre.cli connectors check --name gcp-billing
 PYTHONPATH=src python3 -m finsre.cli discovery plan-sku \
   --service "Compute Engine" \
-  --sku-id "egress-1" \
   --sku-description "Inter-region Egress" \
-  --cost 42.50 \
   --project-id prod-api
-PYTHONPATH=src python3 -m finsre.cli investigate draft-from-sku \
-  --service "Compute Engine" \
-  --sku-id "egress-1" \
-  --sku-description "Inter-region Egress" \
-  --cost 42.50 \
-  --project-id prod-api
+PYTHONPATH=src python3 -m finsre.cli investigate detect --path ./billing.csv
 ```
 
 Commands that call live GCP require the `gcp` extra and application default credentials or workload identity. Commands that call the LLM require the `llm` extra, `OPENAI_API_KEY`, and explicit `--approve-llm`. LangSmith tracing is opt-in with `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`.
@@ -589,8 +557,8 @@ Useful commands:
 - `finsre connectors check --name gcp-billing --live`
 - `finsre connectors check --name local-csv-billing --path ./billing.csv`
 - `finsre connectors preview-csv --path ./billing.csv --limit 10`
-- `finsre investigate draft-from-csv --path ./billing.csv --limit 10`
-- `finsre investigate run-from-csv --approve-llm --path ./billing.csv --limit 5`
+- `finsre investigate detect --path ./billing.csv`
+- `finsre investigate run --approve-llm --path ./billing.csv`
 - `finsre gcp billing api-preview --start-date 2026-05-01 --end-date 2026-05-16`
 - `finsre gcp billing accounts`
 - `finsre gcp billing projects`
@@ -600,7 +568,7 @@ Useful commands:
 GCP Catalog API pricing periods must stay within one calendar month and cannot be in the future. FinSRE treats `start_date` as inclusive and `end_date` as exclusive.
 
 The local CSV connector accepts either row-shaped billing feeds with service, SKU, and cost columns, or daily matrix feeds with `Service`, `SKU`, and `YYYY-MM-DD` cost columns. Column names can be overridden with flags such as `--service-column`, `--sku-column`, and `--cost-column`.
-CSV investigation commands group matching service/SKU/project/currency rows before drafting or calling the approved LLM path.
+Investigation commands group rows into daily `CostSeries` per `(service, sku, project, currency)` and run the detector before classifying or calling the approved LLM path.
 
 ### Connector Compatibility
 

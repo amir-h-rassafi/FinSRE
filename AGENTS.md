@@ -12,10 +12,11 @@ Build a cost investigation tool that starts from billing/SKU signals, plans read
 - Keep modules narrow:
   - `cli.py`: argument parsing only.
   - `cli_commands.py`: command handlers.
-  - `core/`: events, manifests, ports, serialization, time.
-  - `connectors/`: provider API integration.
+  - `core/`: events, manifests, ports, serialization, time, cost-series normalization.
+  - `connectors/`: provider API integration; emit `CostLineItem` rows.
+  - `detectors/`: anomaly detection over `CostSeries`.
   - `discovery/`: SKU classification, probe planning, facts, questions.
-  - `agents/`: LangGraph/agent orchestration behind interfaces.
+  - `agents/`: LangGraph/agent orchestration behind interfaces; agents consume `InvestigationContext`.
   - `memory/`: retrieval and memory interfaces.
   - `tracker/`: investigation/recommendation state.
 - Do not add abstractions unless a second use is visible or the boundary is already part of the design.

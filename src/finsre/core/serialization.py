@@ -7,8 +7,15 @@ from finsre.core.components import ComponentManifest
 from finsre.core.events import EventEnvelope
 from finsre.discovery.probes import DiscoveryProbe
 from finsre.discovery.questions import Question
-from finsre.discovery.sku import BillingSkuSignal, SkuClassification
-from finsre.models import CompatibilityReport, ConnectorContract, ConnectorDescriptor, CostLineItem
+from finsre.discovery.sku import SkuClassification
+from finsre.models import (
+    Anomaly,
+    CompatibilityReport,
+    ConnectorContract,
+    ConnectorDescriptor,
+    CostLineItem,
+    CostSeries,
+)
 
 
 def connector_to_dict(descriptor: ConnectorDescriptor) -> dict[str, Any]:
@@ -71,26 +78,11 @@ def event_to_dict(event: EventEnvelope) -> dict[str, Any]:
     }
 
 
-def sku_signal_to_dict(signal: BillingSkuSignal) -> dict[str, Any]:
-    return {
-        "service": signal.service,
-        "sku_id": signal.sku_id,
-        "sku_description": signal.sku_description,
-        "cost": signal.cost,
-        "currency": signal.currency,
-        "project_id": signal.project_id,
-        "usage_amount": signal.usage_amount,
-        "usage_unit": signal.usage_unit,
-        "labels": signal.labels,
-    }
-
-
 def sku_classification_to_dict(classification: SkuClassification) -> dict[str, Any]:
     return {
         "domain": classification.domain.value,
         "confidence": classification.confidence,
         "reasons": list(classification.reasons),
-        "signal": sku_signal_to_dict(classification.signal),
     }
 
 
@@ -119,6 +111,7 @@ def cost_line_item_to_dict(item: CostLineItem) -> dict[str, Any]:
         "account_id": item.account_id,
         "service": item.service,
         "sku": item.sku,
+        "sku_description": item.sku_description,
         "usage_start_date": item.usage_start_date,
         "currency": item.currency,
         "cost": item.cost,
@@ -127,6 +120,27 @@ def cost_line_item_to_dict(item: CostLineItem) -> dict[str, Any]:
         "labels": item.labels,
         "source": item.source,
         "observed_at": item.observed_at.isoformat(),
+    }
+
+
+def cost_series_to_dict(series: CostSeries) -> dict[str, Any]:
+    return {
+        "service": series.service,
+        "sku": series.sku,
+        "sku_description": series.sku_description,
+        "project_id": series.project_id,
+        "currency": series.currency,
+        "points": [[day.isoformat(), str(cost)] for day, cost in series.points],
+    }
+
+
+def anomaly_to_dict(anomaly: Anomaly) -> dict[str, Any]:
+    return {
+        "series": cost_series_to_dict(anomaly.series),
+        "inflection_date": anomaly.inflection_date.isoformat(),
+        "baseline_cost": str(anomaly.baseline_cost),
+        "observed_cost": str(anomaly.observed_cost),
+        "magnitude_pct": str(anomaly.magnitude_pct),
     }
 
 

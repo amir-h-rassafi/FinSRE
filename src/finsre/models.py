@@ -73,8 +73,28 @@ class CostLineItem:
     usage_start_date: date
     currency: str
     cost: Decimal
+    sku_description: str | None = None
     project_id: str | None = None
     region: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
     source: str = ""
     observed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
+class CostSeries:
+    service: str
+    sku: str
+    sku_description: str | None
+    project_id: str | None
+    currency: str
+    points: tuple[tuple[date, Decimal], ...]
+
+
+@dataclass(frozen=True)
+class Anomaly:
+    series: CostSeries
+    inflection_date: date
+    baseline_cost: Decimal
+    observed_cost: Decimal
+    magnitude_pct: Decimal

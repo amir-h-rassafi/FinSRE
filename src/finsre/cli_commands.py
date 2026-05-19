@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from finsre.agents.base import AgentResult
-from finsre.agents.investigation import InvestigationAgent
+from finsre.agents.investigation import InvestigationContext
 from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.config import get_settings
 from finsre.connectors.gcp_billing import GcpBillingConnector
@@ -12,6 +12,7 @@ from finsre.connectors.local_csv_billing import CsvBillingColumnMap, LocalCsvBil
 from finsre.connectors.registry import build_default_registry
 from finsre.core.catalog import build_component_catalog
 from finsre.core.serialization import (
+    anomaly_to_dict,
     compatibility_to_dict,
     component_to_dict,
     connector_to_dict,
@@ -21,8 +22,10 @@ from finsre.core.serialization import (
     question_to_dict,
     sku_classification_to_dict,
 )
+from finsre.core.series import to_daily_series
 from finsre.core.time import parse_period
-from finsre.discovery.sku import BillingSkuSignal, SkuClassifier
+from finsre.detectors.daily_baseline import DailyBaselineDetector
+from finsre.discovery.sku import SkuClassifier
 from finsre.discovery.workflow import SkuDiscoveryWorkflow
 from finsre.errors import ApprovalRequiredError
 from finsre.llm.factory import build_llm_client
@@ -38,13 +41,11 @@ def list_components(_: argparse.Namespace) -> list[dict[str, Any]]:
 
 
 def classify_sku(args: argparse.Namespace) -> dict[str, Any]:
-    signal = _sku_signal_from_args(args)
-    return sku_classification_to_dict(SkuClassifier().classify(signal))
+    return sku_classification_to_dict(SkuClassifier().classify(args.service, args.sku_description))
 
 
 def plan_sku_discovery(args: argparse.Namespace) -> dict[str, Any]:
-    signal = _sku_signal_from_args(args)
-    plan = SkuDiscoveryWorkflow().plan(signal)
+    plan = SkuDiscoveryWorkflow().plan_for_sku(args.service, args.sku_description, args.project_id)
     return {
         "classification": sku_classification_to_dict(plan.classification),
         "probes": [discovery_probe_to_dict(probe) for probe in plan.probes],
@@ -52,65 +53,46 @@ def plan_sku_discovery(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def investigate_sku_draft(args: argparse.Namespace) -> dict[str, Any]:
-    signal = _sku_signal_from_args(args)
-    draft = InvestigationAgent().draft_from_sku(signal)
-    return {
-        "llm_required": draft.llm_required,
-        "approval_reason": draft.approval_reason,
-        "classification": sku_classification_to_dict(draft.discovery_plan.classification),
-        "probes": [discovery_probe_to_dict(probe) for probe in draft.discovery_plan.probes],
-        "questions": [question_to_dict(question) for question in draft.discovery_plan.questions],
-    }
-
-
-def investigate_sku_run(args: argparse.Namespace) -> dict[str, Any]:
-    if not args.approve_llm:
-        raise ApprovalRequiredError("Refusing to call LLM without --approve-llm.")
-    signal = _sku_signal_from_args(args)
-    result = _langgraph_investigation_agent().run_from_sku(signal)
-    return _agent_result_to_dict(result)
-
-
-def investigate_csv_draft(args: argparse.Namespace) -> dict[str, Any]:
-    connector = local_csv_billing_connector(args)
-    agent = InvestigationAgent()
+def investigate_detect(args: argparse.Namespace) -> dict[str, Any]:
+    pipeline = _build_pipeline(args)
     drafts = []
-    signals = connector.collect_sku_signals(limit=args.limit)
-    for signal in _aggregate_sku_signals(signals):
-        draft = agent.draft_from_sku(signal)
+    for anomaly, plan in pipeline.find_anomalies_with_plans():
         drafts.append(
             {
-                "llm_required": draft.llm_required,
-                "approval_reason": draft.approval_reason,
-                "classification": sku_classification_to_dict(draft.discovery_plan.classification),
-                "probes": [discovery_probe_to_dict(probe) for probe in draft.discovery_plan.probes],
-                "questions": [question_to_dict(question) for question in draft.discovery_plan.questions],
+                "anomaly": anomaly_to_dict(anomaly),
+                "classification": sku_classification_to_dict(plan.classification),
+                "probes": [discovery_probe_to_dict(probe) for probe in plan.probes],
+                "questions": [question_to_dict(question) for question in plan.questions],
             }
         )
     return {
-        "connector": connector.name,
-        "path": str(connector.path),
-        "input_count": len(signals),
-        "count": len(drafts),
-        "drafts": drafts,
+        "connector": pipeline.connector.name,
+        "path": str(pipeline.connector.path),
+        "series_count": pipeline.series_count,
+        "anomaly_count": len(drafts),
+        "anomalies": drafts,
     }
 
 
-def investigate_csv_run(args: argparse.Namespace) -> dict[str, Any]:
+def investigate_run(args: argparse.Namespace) -> dict[str, Any]:
     if not args.approve_llm:
         raise ApprovalRequiredError("Refusing to call LLM without --approve-llm.")
-    connector = local_csv_billing_connector(args)
+    pipeline = _build_pipeline(args)
     agent = _langgraph_investigation_agent()
     investigations = []
-    signals = connector.collect_sku_signals(limit=args.limit)
-    for signal in _aggregate_sku_signals(signals):
-        investigations.append(_agent_result_to_dict(agent.run_from_sku(signal)))
+    for anomaly, plan in pipeline.find_anomalies_with_plans():
+        context = InvestigationContext(anomaly=anomaly, discovery_plan=plan)
+        investigations.append(
+            {
+                "anomaly": anomaly_to_dict(anomaly),
+                "result": _agent_result_to_dict(agent.investigate(context)),
+            }
+        )
     return {
-        "connector": connector.name,
-        "path": str(connector.path),
-        "input_count": len(signals),
-        "count": len(investigations),
+        "connector": pipeline.connector.name,
+        "path": str(pipeline.connector.path),
+        "series_count": pipeline.series_count,
+        "anomaly_count": len(investigations),
         "investigations": investigations,
     }
 
@@ -200,12 +182,36 @@ def local_csv_billing_connector(args: argparse.Namespace) -> LocalCsvBillingConn
             currency=args.currency_column,
             project_id=args.project_column,
             region=args.region_column,
-            usage_amount=args.usage_amount_column,
-            usage_unit=args.usage_unit_column,
             usage_start_date=args.usage_start_date_column,
         ),
         currency=args.currency,
     )
+
+
+class _Pipeline:
+    def __init__(self, connector: LocalCsvBillingConnector, args: argparse.Namespace) -> None:
+        self.connector = connector
+        self.series = to_daily_series(connector.collect_costs())
+        self._workflow = SkuDiscoveryWorkflow()
+        self._detector = DailyBaselineDetector(
+            threshold_pct=Decimal(str(args.threshold_pct)),
+            baseline_days=args.baseline_days,
+        )
+
+    @property
+    def series_count(self) -> int:
+        return len(self.series)
+
+    def find_anomalies_with_plans(self):
+        for series in self.series:
+            anomaly = self._detector.detect(series)
+            if anomaly is None:
+                continue
+            yield anomaly, self._workflow.plan_for_anomaly(anomaly)
+
+
+def _build_pipeline(args: argparse.Namespace) -> _Pipeline:
+    return _Pipeline(local_csv_billing_connector(args), args)
 
 
 def _langgraph_investigation_agent() -> LangGraphInvestigationAgent:
@@ -219,40 +225,3 @@ def _agent_result_to_dict(result: AgentResult) -> dict[str, Any]:
         "confidence": result.confidence,
         "evidence": list(result.evidence),
     }
-
-
-def _aggregate_sku_signals(signals: list[BillingSkuSignal]) -> list[BillingSkuSignal]:
-    buckets: dict[tuple[str, str, str, str | None, str], tuple[BillingSkuSignal, int]] = {}
-    for signal in signals:
-        key = (signal.service, signal.sku_id, signal.sku_description, signal.project_id, signal.currency)
-        if key not in buckets:
-            buckets[key] = (signal, 1)
-            continue
-
-        current, count = buckets[key]
-        buckets[key] = (
-            BillingSkuSignal(
-                service=current.service,
-                sku_id=current.sku_id,
-                sku_description=current.sku_description,
-                cost=current.cost + signal.cost,
-                currency=current.currency,
-                project_id=current.project_id,
-                usage_amount=current.usage_amount,
-                usage_unit=current.usage_unit,
-                labels={**current.labels, "source_signal_count": str(count + 1)},
-            ),
-            count + 1,
-        )
-    return [signal for signal, _ in buckets.values()]
-
-
-def _sku_signal_from_args(args: argparse.Namespace) -> BillingSkuSignal:
-    return BillingSkuSignal(
-        service=args.service,
-        sku_id=args.sku_id,
-        sku_description=args.sku_description,
-        cost=Decimal(args.cost),
-        currency=args.currency,
-        project_id=args.project_id,
-    )

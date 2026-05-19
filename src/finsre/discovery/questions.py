@@ -22,17 +22,19 @@ class QuestionPlanner:
         classification: SkuClassification,
         probes: tuple[DiscoveryProbe, ...],
         facts: tuple[ContextFact, ...] = (),
+        *,
+        project_id: str | None = None,
     ) -> tuple[Question, ...]:
         fact_types = {fact.fact_type for fact in facts}
-        project_id = classification.signal.project_id or "unknown-project"
+        entity_id = project_id or "unknown-project"
 
         if classification.domain == SkuDomain.NETWORK_EGRESS and "traffic_intent" not in fact_types:
             return (
                 Question(
-                    id=f"{project_id}:traffic-intent",
-                    entity_id=project_id,
+                    id=f"{entity_id}:traffic-intent",
+                    entity_id=entity_id,
                     text=(
-                        f"Is the billed network traffic for project `{project_id}` expected for HA, "
+                        f"Is the billed network traffic for project `{entity_id}` expected for HA, "
                         "migration, or customer traffic?"
                     ),
                     reason="Network egress optimization depends on whether cross-boundary traffic is intentional.",
@@ -42,9 +44,9 @@ class QuestionPlanner:
         if any(probe.kind == ProbeKind.ASSET for probe in probes) and "owner" not in fact_types:
             return (
                 Question(
-                    id=f"{project_id}:owner",
-                    entity_id=project_id,
-                    text=f"Who owns project `{project_id}` for cost and architecture decisions?",
+                    id=f"{entity_id}:owner",
+                    entity_id=entity_id,
+                    text=f"Who owns project `{entity_id}` for cost and architecture decisions?",
                     reason="Recommendations need an owner before becoming actionable work.",
                     blocks_recommendation=False,
                 ),

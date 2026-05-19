@@ -1,17 +1,21 @@
+import json
 import warnings
 from typing import Any, TypedDict
 
 from finsre.agents.base import AgentCapability, AgentResult
-from finsre.agents.investigation import _discovery_plan_context
-from finsre.discovery.sku import BillingSkuSignal
-from finsre.discovery.workflow import SkuDiscoveryWorkflow
+from finsre.agents.investigation import InvestigationContext, investigation_payload
 from finsre.errors import OptionalDependencyError
 from finsre.llm.base import LLMClient, LLMMessage
 
+_SYSTEM_PROMPT = (
+    "You are a cloud cost investigation agent. Use only the provided context. "
+    "Return concise hypotheses, missing evidence, and safe next steps."
+)
+
 
 class InvestigationState(TypedDict, total=False):
-    signal: BillingSkuSignal
-    context: dict[str, Any]
+    context: InvestigationContext
+    payload: dict[str, Any]
     summary: str
 
 
@@ -25,17 +29,16 @@ class LangGraphInvestigationAgent:
     name = "langgraph-investigation-agent"
     capabilities = (AgentCapability.INVESTIGATION,)
 
-    def __init__(self, llm_client: LLMClient, workflow: SkuDiscoveryWorkflow | None = None) -> None:
+    def __init__(self, llm_client: LLMClient) -> None:
         self._llm_client = llm_client
-        self._workflow = workflow or SkuDiscoveryWorkflow()
         self._graph = self._build_graph()
 
-    def run_from_sku(self, signal: BillingSkuSignal) -> AgentResult:
-        state = self._graph.invoke({"signal": signal})
+    def investigate(self, context: InvestigationContext) -> AgentResult:
+        state = self._graph.invoke({"context": context})
         return AgentResult(
             capability=AgentCapability.INVESTIGATION,
             summary=state["summary"],
-            evidence=({"source": "langgraph_investigation_context", "context": state["context"]},),
+            evidence=({"source": "langgraph_investigation_context", "context": state["payload"]},),
             confidence=None,
         )
 
@@ -52,28 +55,21 @@ class LangGraphInvestigationAgent:
             raise OptionalDependencyError("Install the LLM extra first: pip install '.[llm]'") from exc
 
         graph = StateGraph(InvestigationState)
-        graph.add_node("plan_context", self._plan_context)
+        graph.add_node("prepare", self._prepare)
         graph.add_node("investigate", self._investigate)
-        graph.set_entry_point("plan_context")
-        graph.add_edge("plan_context", "investigate")
+        graph.set_entry_point("prepare")
+        graph.add_edge("prepare", "investigate")
         graph.add_edge("investigate", END)
         return graph.compile()
 
-    def _plan_context(self, state: InvestigationState) -> InvestigationState:
-        plan = self._workflow.plan(state["signal"])
-        return {"context": _discovery_plan_context(plan)}
+    def _prepare(self, state: InvestigationState) -> InvestigationState:
+        return {"payload": investigation_payload(state["context"])}
 
     def _investigate(self, state: InvestigationState) -> InvestigationState:
         response = self._llm_client.complete(
             [
-                LLMMessage(
-                    role="system",
-                    content=(
-                        "You are a cloud cost investigation agent. Use only the provided context. "
-                        "Return concise hypotheses, missing evidence, and safe next steps."
-                    ),
-                ),
-                LLMMessage(role="user", content=str(state["context"])),
+                LLMMessage(role="system", content=_SYSTEM_PROMPT),
+                LLMMessage(role="user", content=json.dumps(state["payload"], sort_keys=True)),
             ]
         )
         return {"summary": response.content}
