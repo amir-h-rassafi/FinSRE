@@ -1,6 +1,6 @@
 from datetime import date
 
-from finsre.connectors.gcp_billing import GcpBillingConnector
+from finsre.connectors.gcp_billing import GcpBillingApiConnector
 from finsre.models import ConnectorContract, TimePeriod
 
 
@@ -15,7 +15,7 @@ class FakeTransport:
 
 
 def test_describe_reports_api_connector_capabilities() -> None:
-    connector = GcpBillingConnector(billing_account=None)
+    connector = GcpBillingApiConnector(billing_account=None)
 
     descriptor = connector.describe()
 
@@ -28,7 +28,7 @@ def test_describe_reports_api_connector_capabilities() -> None:
 
 
 def test_check_compatibility_reports_contract_without_live_probe() -> None:
-    connector = GcpBillingConnector()
+    connector = GcpBillingApiConnector()
 
     report = connector.check_compatibility()
 
@@ -43,7 +43,7 @@ def test_check_compatibility_reports_contract_without_live_probe() -> None:
 def test_check_compatibility_can_run_live_probe_with_injected_transport() -> None:
     transport = FakeTransport()
     transport.responses.append({"billingAccounts": []})
-    connector = GcpBillingConnector(transport=transport)
+    connector = GcpBillingApiConnector(transport=transport)
 
     report = connector.check_compatibility(live=True)
 
@@ -54,17 +54,17 @@ def test_check_compatibility_can_run_live_probe_with_injected_transport() -> Non
 
 
 def test_check_compatibility_detects_contract_mismatch() -> None:
-    class BrokenContractConnector(GcpBillingConnector):
+    class BrokenContractApiConnector(GcpBillingApiConnector):
         contract = ConnectorContract(version="2.0", upstream="wrong/v9", schema="wrong.schema")
 
-    report = BrokenContractConnector().check_compatibility()
+    report = BrokenContractApiConnector().check_compatibility()
 
     assert report.ok is False
     assert len(report.problems) == 2
 
 
 def test_check_compatibility_detects_missing_required_capability() -> None:
-    class MissingCapabilityConnector(GcpBillingConnector):
+    class MissingCapabilityApiConnector(GcpBillingApiConnector):
         def describe(self):
             descriptor = super().describe()
             return type(descriptor)(
@@ -76,14 +76,14 @@ def test_check_compatibility_detects_missing_required_capability() -> None:
                 details=descriptor.details,
             )
 
-    report = MissingCapabilityConnector().check_compatibility()
+    report = MissingCapabilityApiConnector().check_compatibility()
 
     assert report.ok is False
     assert "Missing required capability: sku_pricing_by_period." in report.problems
 
 
 def test_manifest_describes_deployable_connector_boundary() -> None:
-    connector = GcpBillingConnector()
+    connector = GcpBillingApiConnector()
 
     manifest = connector.manifest()
 
@@ -94,7 +94,7 @@ def test_manifest_describes_deployable_connector_boundary() -> None:
 
 
 def test_compatibility_event_uses_normalized_envelope() -> None:
-    connector = GcpBillingConnector()
+    connector = GcpBillingApiConnector()
 
     event = connector.compatibility_event()
 
@@ -105,7 +105,7 @@ def test_compatibility_event_uses_normalized_envelope() -> None:
 
 
 def test_preview_api_calls_include_period() -> None:
-    connector = GcpBillingConnector(billing_account="012345-6789AB-CDEF01")
+    connector = GcpBillingApiConnector(billing_account="012345-6789AB-CDEF01")
 
     calls = connector.preview_api_calls(TimePeriod(date(2026, 5, 1), date(2026, 5, 16)))
 
@@ -118,7 +118,7 @@ def test_preview_api_calls_include_period() -> None:
 def test_list_projects_uses_configured_billing_account() -> None:
     transport = FakeTransport()
     transport.responses.append({"projectBillingInfo": [{"projectId": "analytics-prod"}]})
-    connector = GcpBillingConnector(billing_account="012345-6789AB-CDEF01", transport=transport)
+    connector = GcpBillingApiConnector(billing_account="012345-6789AB-CDEF01", transport=transport)
 
     projects = connector.list_projects()
 
@@ -134,7 +134,7 @@ def test_list_skus_for_service_uses_period_and_pagination() -> None:
             {"skus": [{"skuId": "sku-2"}]},
         ]
     )
-    connector = GcpBillingConnector(transport=transport)
+    connector = GcpBillingApiConnector(transport=transport)
     period = TimePeriod(date(2026, 5, 1), date(2026, 5, 16))
 
     skus = connector.list_skus_for_service("6F81-5844-456A", period, "GBP")

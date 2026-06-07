@@ -7,7 +7,7 @@ from finsre.agents.base import AgentResult
 from finsre.agents.investigation import InvestigationContext
 from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.config import get_settings
-from finsre.connectors.gcp_billing import GcpBillingConnector
+from finsre.connectors.gcp_billing import GcpBillingApiConnector
 from finsre.connectors.local_csv_billing import CsvBillingColumnMap, LocalCsvBillingConnector
 from finsre.connectors.registry import build_default_registry
 from finsre.core.catalog import build_component_catalog
@@ -163,9 +163,9 @@ def gcp_billing_skus(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def gcp_billing_connector() -> GcpBillingConnector:
+def gcp_billing_connector() -> GcpBillingApiConnector:
     settings = get_settings()
-    return GcpBillingConnector(
+    return GcpBillingApiConnector(
         billing_account=settings.gcp_billing_account,
         currency_code=settings.gcp_billing_currency,
     )

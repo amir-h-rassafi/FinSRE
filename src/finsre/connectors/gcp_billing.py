@@ -41,7 +41,7 @@ class GoogleAuthBillingApiTransport:
         return response.json()
 
 
-class GcpBillingConnector(Connector):
+class GcpBillingApiConnector(Connector):
     """GCP Cloud Billing API connector.
 
     This shard intentionally uses Cloud Billing APIs rather than Billing Export.
