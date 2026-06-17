@@ -21,6 +21,7 @@ class BillingApiTransport(Protocol):
         """Execute a GET request against cloudbilling.googleapis.com."""
 
 
+# Todo: Move to connector, needless complexity
 class GoogleAuthBillingApiTransport:
     base_url = "https://cloudbilling.googleapis.com"
 
