@@ -25,7 +25,7 @@ from finsre.core.serialization import (
 from finsre.core.series import to_daily_series
 from finsre.core.time import parse_period
 from finsre.detectors.daily_baseline import DailyBaselineDetector
-from finsre.discovery.sku import SkuClassifier
+from finsre.discovery.sku import GcpSkuClassifier
 from finsre.discovery.workflow import SkuDiscoveryWorkflow
 from finsre.errors import ApprovalRequiredError
 from finsre.llm.factory import build_llm_client
@@ -41,11 +41,18 @@ def list_components(_: argparse.Namespace) -> list[dict[str, Any]]:
 
 
 def classify_sku(args: argparse.Namespace) -> dict[str, Any]:
-    return sku_classification_to_dict(SkuClassifier().classify(args.service, args.sku_description))
+    return sku_classification_to_dict(
+        GcpSkuClassifier().classify(args.service, args.sku_description, **_sku_classifier_kwargs(args))
+    )
 
 
 def plan_sku_discovery(args: argparse.Namespace) -> dict[str, Any]:
-    plan = SkuDiscoveryWorkflow().plan_for_sku(args.service, args.sku_description, args.project_id)
+    plan = SkuDiscoveryWorkflow().plan_for_sku(
+        args.service,
+        args.sku_description,
+        args.project_id,
+        **_sku_classifier_kwargs(args),
+    )
     return {
         "classification": sku_classification_to_dict(plan.classification),
         "probes": [discovery_probe_to_dict(probe) for probe in plan.probes],
@@ -54,7 +61,7 @@ def plan_sku_discovery(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def investigate_detect(args: argparse.Namespace) -> dict[str, Any]:
-    pipeline = _build_pipeline(args)
+    pipeline = _build_local_csv_investigation_pipeline(args)
     drafts = []
     for anomaly, plan in pipeline.find_anomalies_with_plans():
         drafts.append(
@@ -77,7 +84,7 @@ def investigate_detect(args: argparse.Namespace) -> dict[str, Any]:
 def investigate_run(args: argparse.Namespace) -> dict[str, Any]:
     if not args.approve_llm:
         raise ApprovalRequiredError("Refusing to call LLM without --approve-llm.")
-    pipeline = _build_pipeline(args)
+    pipeline = _build_local_csv_investigation_pipeline(args)
     agent = _langgraph_investigation_agent()
     investigations = []
     for anomaly, plan in pipeline.find_anomalies_with_plans():
@@ -163,6 +170,16 @@ def gcp_billing_skus(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _sku_classifier_kwargs(args: argparse.Namespace) -> dict[str, str | None]:
+    return {
+        "sku_id": args.sku_id,
+        "service_id": args.service_id,
+        "resource_family": args.resource_family,
+        "resource_group": args.resource_group,
+        "usage_type": args.usage_type,
+    }
+
+
 def gcp_billing_connector() -> GcpBillingApiConnector:
     settings = get_settings()
     return GcpBillingApiConnector(
@@ -188,7 +205,7 @@ def local_csv_billing_connector(args: argparse.Namespace) -> LocalCsvBillingConn
     )
 
 
-class _Pipeline:
+class _LocalCsvInvestigationPipeline:
     def __init__(self, connector: LocalCsvBillingConnector, args: argparse.Namespace) -> None:
         self.connector = connector
         self.series = to_daily_series(connector.collect_costs())
@@ -210,8 +227,8 @@ class _Pipeline:
             yield anomaly, self._workflow.plan_for_anomaly(anomaly)
 
 
-def _build_pipeline(args: argparse.Namespace) -> _Pipeline:
-    return _Pipeline(local_csv_billing_connector(args), args)
+def _build_local_csv_investigation_pipeline(args: argparse.Namespace) -> _LocalCsvInvestigationPipeline:
+    return _LocalCsvInvestigationPipeline(local_csv_billing_connector(args), args)
 
 
 def _langgraph_investigation_agent() -> LangGraphInvestigationAgent:

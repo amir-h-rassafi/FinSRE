@@ -12,6 +12,22 @@ class DiscoveryModule(Protocol):
         """Run one read-only discovery probe and return context facts."""
 
 
+class BillingDiscovery:
+    name = "billing-discovery"
+
+    def discover(self, probe: DiscoveryProbe) -> tuple[ContextFact, ...]:
+        return ()
+
+    def manifest(self) -> ComponentManifest:
+        return ComponentManifest(
+            name=self.name,
+            kind=ComponentKind.DISCOVERY,
+            version="0.1",
+            deploy_modes=(DeployMode.IN_PROCESS, DeployMode.CLI_JOB, DeployMode.QUEUE_WORKER),
+            description="Discovers SKU, service, label, and cost-series context from billing exports and catalogs.",
+        )
+
+
 class AssetDiscovery:
     name = "asset-discovery"
 

@@ -92,6 +92,7 @@ def discovery_probe_to_dict(probe: DiscoveryProbe) -> dict[str, Any]:
         "name": probe.name,
         "reason": probe.reason,
         "required": probe.required,
+        "evidence_sources": list(probe.evidence_sources),
     }
 
 

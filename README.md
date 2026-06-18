@@ -260,11 +260,17 @@ Current modules:
 
 - `core/series.to_daily_series`: groups `CostLineItem` rows into daily `CostSeries`.
 - `detectors/daily_baseline.DailyBaselineDetector`: percent-change vs trailing window; one anomaly per series.
-- `sku-classifier`: maps service/SKU descriptions into domains such as `network_egress`, `bigquery`, `gke`, `logging`, `storage`, `compute`.
-- `probe-planner`: maps domains to read-only probes.
-- `asset-discovery`, `network-discovery`, `telemetry-discovery`, `change-discovery`: placeholders for read-only probes.
+- `sku-classifier`: maps Billing Export/Catalog-style signals into provider-neutral domains such as `network_egress`, `data_warehouse`, `kubernetes`, `database`, `logging`, `storage`, `compute`.
+- `probe-planner`: maps domains to read-only probes and always starts with billing evidence before asset, telemetry, change, or recommender probes.
+- `billing-discovery`, `asset-discovery`, `network-discovery`, `telemetry-discovery`, `change-discovery`: placeholders for read-only probes.
 - `context-fact-store`: stores discovered facts with source, confidence, evidence, and expiry.
 - `question-planner`: asks humans only when missing intent blocks a recommendation.
+
+SKU catalog boundary:
+
+- Do not hardcode every live Google SKU in Python. The public SKU catalog changes and should be read through the Cloud Billing Catalog API or from a customer's BigQuery Billing Export.
+- The classifier owns stable domain routing rules and accepts `service.id`, `service.description`, `sku.id`, `sku.description`, and Catalog SKU category fields such as resource family, resource group, and usage type.
+- A DB/cache is useful after live ingestion exists. Store normalized SKU taxonomy rows keyed by provider, service id, SKU id, effective dates, category fields, and the mapped FinSRE domain. Until then, a static database would only duplicate the rules without better evidence.
 
 Useful commands:
 
@@ -272,7 +278,9 @@ Useful commands:
 finsre discovery classify-sku \
   --service "Compute Engine" \
   --sku-description "Inter-region Egress" \
-  --project-id prod-api
+  --project-id prod-api \
+  --resource-family Network \
+  --resource-group Egress
 
 finsre discovery plan-sku \
   --service "Compute Engine" \

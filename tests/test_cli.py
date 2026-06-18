@@ -64,6 +64,7 @@ def test_components_list_outputs_deployable_boundaries() -> None:
     assert [component["name"] for component in payload] == [
         "gcp-billing",
         "local-csv-billing",
+        "billing-discovery",
         "asset-discovery",
         "network-discovery",
         "telemetry-discovery",
@@ -106,8 +107,32 @@ def test_discovery_plan_sku_outputs_probes_and_questions() -> None:
     payload = json.loads(stdout.getvalue())
     assert exit_code == 0
     assert payload["classification"]["domain"] == "network_egress"
-    assert [probe["kind"] for probe in payload["probes"]] == ["network", "telemetry", "change"]
+    assert [probe["kind"] for probe in payload["probes"]] == ["billing", "network", "telemetry", "change"]
     assert payload["questions"][0]["id"] == "prod-api:traffic-intent"
+
+
+def test_discovery_classify_sku_accepts_catalog_fields() -> None:
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(
+            [
+                "discovery",
+                "classify-sku",
+                "--service",
+                "Compute Engine",
+                "--sku-description",
+                "Standard usage",
+                "--resource-family",
+                "Network",
+                "--resource-group",
+                "Egress",
+            ]
+        )
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["domain"] == "network_egress"
 
 
 def test_investigate_detect_flags_anomalies(tmp_path) -> None:

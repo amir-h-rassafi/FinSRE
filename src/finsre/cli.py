@@ -196,6 +196,11 @@ def _add_sku_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--service", required=True, help="Billing service name, for example Compute Engine")
     parser.add_argument("--sku-description", required=True, help="Provider SKU description")
     parser.add_argument("--project-id", help="Project/account id associated with the SKU")
+    parser.add_argument("--sku-id", help="Provider SKU id from billing export or catalog")
+    parser.add_argument("--service-id", help="Provider service id from billing export or catalog")
+    parser.add_argument("--resource-family", help="Catalog SKU resource family, for example Network")
+    parser.add_argument("--resource-group", help="Catalog SKU resource group, for example Egress")
+    parser.add_argument("--usage-type", help="Catalog SKU usage type, for example OnDemand")
 
 
 def _add_csv_feed_args(parser: argparse.ArgumentParser) -> None:
