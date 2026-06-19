@@ -146,8 +146,67 @@ def test_investigate_detect_flags_anomalies(tmp_path) -> None:
     assert exit_code == 0
     assert payload["series_count"] == 1
     assert payload["anomaly_count"] == 1
-    assert payload["anomalies"][0]["classification"]["domain"] == "network_egress"
+    assert payload["profile"]["format"] == "row"
+    assert payload["total_cost"] == "90"
+    anomaly = payload["anomalies"][0]
+    assert anomaly["classification"]["domain"] == "network_egress"
+    assert anomaly["magnitude_pct"] == "100"
+    assert anomaly["probe_names"] == [
+        "billing-sku-context",
+        "network-paths",
+        "network-traffic",
+        "network-config-changes",
+    ]
+    assert anomaly["question_count"] == 1
+    assert "probes" not in anomaly
+    assert "questions" not in anomaly
+
+
+def test_investigate_detect_full_preserves_detailed_anomaly_payload(tmp_path) -> None:
+    csv_path = _write_spike_csv(tmp_path)
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(["investigate", "detect", "--path", str(csv_path), "--full"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
     assert payload["anomalies"][0]["anomaly"]["magnitude_pct"] == "100"
+    assert payload["anomalies"][0]["classification"]["domain"] == "network_egress"
+
+
+def test_investigate_detect_can_group_by_service(tmp_path) -> None:
+    csv_path = tmp_path / "billing.csv"
+    header = "service,sku,cost,project,usage start date"
+    rows = [header]
+    for day in range(1, 8):
+        rows.append(f"Compute Engine,cpu,10,prod-api,2026-05-{day:02d}")
+        rows.append(f"Compute Engine,ram,10,prod-api,2026-05-{day:02d}")
+    rows.append("Compute Engine,cpu,20,prod-api,2026-05-08")
+    rows.append("Compute Engine,ram,20,prod-api,2026-05-08")
+    csv_path.write_text("\n".join(rows), encoding="utf-8")
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(["investigate", "detect", "--path", str(csv_path), "--group-by", "service"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["group_by"] == "service"
+    assert payload["series_count"] == 1
+    assert payload["anomalies"][0]["sku"] == "__service_total__"
+
+
+def test_investigate_detect_filters_small_anomalies(tmp_path) -> None:
+    csv_path = _write_spike_csv(tmp_path)
+    stdout = StringIO()
+
+    with patch("sys.stdout", stdout):
+        exit_code = main(["investigate", "detect", "--path", str(csv_path), "--min-cost", "11"])
+
+    payload = json.loads(stdout.getvalue())
+    assert exit_code == 0
+    assert payload["anomaly_count"] == 0
 
 
 def test_investigate_run_uses_approved_llm_path(fake_langgraph, tmp_path) -> None:

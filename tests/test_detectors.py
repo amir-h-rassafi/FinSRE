@@ -1,9 +1,9 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from finsre.core.series import to_daily_series
+from finsre.core.series import filter_series_by_lookback, to_daily_series
 from finsre.detectors.daily_baseline import DailyBaselineDetector
-from finsre.models import CloudProvider, CostLineItem, CostSeries
+from finsre.models import SERVICE_TOTAL_SKU, CloudProvider, CostLineItem, CostSeries
 
 
 def test_to_daily_series_groups_by_service_sku_project_currency() -> None:
@@ -32,6 +32,28 @@ def test_to_daily_series_picks_first_non_empty_sku_description() -> None:
     series = to_daily_series(rows)
 
     assert series[0].sku_description == "Analysis bytes"
+
+
+def test_to_daily_series_can_group_by_service() -> None:
+    base = date(2026, 5, 1)
+    rows = [
+        _row(base, "Compute Engine", "cpu", "prod-api", "USD", Decimal("10")),
+        _row(base, "Compute Engine", "ram", "prod-api", "USD", Decimal("5")),
+    ]
+
+    series = to_daily_series(rows, group_by="service")
+
+    assert len(series) == 1
+    assert series[0].sku == SERVICE_TOTAL_SKU
+    assert series[0].points == ((base, Decimal("15")),)
+
+
+def test_filter_series_by_lookback_keeps_recent_points() -> None:
+    series = _series([1, 2, 3, 4, 5])
+
+    filtered = filter_series_by_lookback([series], lookback_days=2)
+
+    assert [point[1] for point in filtered[0].points] == [Decimal("4"), Decimal("5")]
 
 
 def test_daily_baseline_detector_flags_spike_above_threshold() -> None:

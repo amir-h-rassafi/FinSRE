@@ -8,7 +8,7 @@ from finsre.agents.investigation import InvestigationContext
 from finsre.agents.langgraph_investigation import LangGraphInvestigationAgent
 from finsre.config import get_settings
 from finsre.connectors.gcp_billing import GcpBillingApiConnector
-from finsre.connectors.local_csv_billing import CsvBillingColumnMap, LocalCsvBillingConnector
+from finsre.connectors.local_csv_billing import CsvBillingColumnMap, CsvBillingProfile, LocalCsvBillingConnector
 from finsre.connectors.registry import build_default_registry
 from finsre.core.catalog import build_component_catalog
 from finsre.core.serialization import (
@@ -22,13 +22,14 @@ from finsre.core.serialization import (
     question_to_dict,
     sku_classification_to_dict,
 )
-from finsre.core.series import to_daily_series
+from finsre.core.series import filter_series_by_lookback, to_daily_series
 from finsre.core.time import parse_period
 from finsre.detectors.daily_baseline import DailyBaselineDetector
 from finsre.discovery.sku import GcpSkuClassifier
 from finsre.discovery.workflow import SkuDiscoveryWorkflow
 from finsre.errors import ApprovalRequiredError
 from finsre.llm.factory import build_llm_client
+from finsre.models import Anomaly, CostSeries
 
 
 def list_connectors(_: argparse.Namespace) -> list[dict[str, Any]]:
@@ -62,23 +63,10 @@ def plan_sku_discovery(args: argparse.Namespace) -> dict[str, Any]:
 
 def investigate_detect(args: argparse.Namespace) -> dict[str, Any]:
     pipeline = _build_local_csv_investigation_pipeline(args)
-    drafts = []
-    for anomaly, plan in pipeline.find_anomalies_with_plans():
-        drafts.append(
-            {
-                "anomaly": anomaly_to_dict(anomaly),
-                "classification": sku_classification_to_dict(plan.classification),
-                "probes": [discovery_probe_to_dict(probe) for probe in plan.probes],
-                "questions": [question_to_dict(question) for question in plan.questions],
-            }
-        )
-    return {
-        "connector": pipeline.connector.name,
-        "path": str(pipeline.connector.path),
-        "series_count": pipeline.series_count,
-        "anomaly_count": len(drafts),
-        "anomalies": drafts,
-    }
+    drafts = _anomaly_drafts(pipeline)
+    if args.full:
+        return _detailed_detection_payload(pipeline, drafts)
+    return _summary_detection_payload(pipeline, drafts)
 
 
 def investigate_run(args: argparse.Namespace) -> dict[str, Any]:
@@ -196,9 +184,16 @@ def local_csv_billing_connector(args: argparse.Namespace) -> LocalCsvBillingConn
             sku=args.sku_column,
             sku_description=args.sku_description_column,
             cost=args.cost_column,
+            credit=args.credit_column,
+            discount=args.discount_column,
+            usage_amount=args.usage_amount_column,
+            usage_unit=args.usage_unit_column,
+            invoice_month=args.invoice_month_column,
             currency=args.currency_column,
             project_id=args.project_column,
             region=args.region_column,
+            labels=args.labels_column,
+            tags=args.tags_column,
             usage_start_date=args.usage_start_date_column,
         ),
         currency=args.currency,
@@ -208,10 +203,20 @@ def local_csv_billing_connector(args: argparse.Namespace) -> LocalCsvBillingConn
 class _LocalCsvInvestigationPipeline:
     def __init__(self, connector: LocalCsvBillingConnector, args: argparse.Namespace) -> None:
         self.connector = connector
-        self.series = to_daily_series(connector.collect_costs())
+        self.profile = connector.profile()
+        self.group_by = args.group_by
+        self.lookback_days = args.lookback_days
+        self.min_cost = Decimal(str(args.min_cost))
+        self.threshold_pct = Decimal(str(args.threshold_pct))
+        self.baseline_days = args.baseline_days
+        self.rows = tuple(connector.collect_costs())
+        self.series = filter_series_by_lookback(
+            to_daily_series(self.rows, group_by=args.group_by),
+            args.lookback_days,
+        )
         self._workflow = SkuDiscoveryWorkflow()
         self._detector = DailyBaselineDetector(
-            threshold_pct=Decimal(str(args.threshold_pct)),
+            threshold_pct=self.threshold_pct,
             baseline_days=args.baseline_days,
         )
 
@@ -222,9 +227,149 @@ class _LocalCsvInvestigationPipeline:
     def find_anomalies_with_plans(self):
         for series in self.series:
             anomaly = self._detector.detect(series)
-            if anomaly is None:
+            if anomaly is None or _anomaly_delta(anomaly) < self.min_cost:
                 continue
             yield anomaly, self._workflow.plan_for_anomaly(anomaly)
+
+
+def _anomaly_drafts(pipeline: _LocalCsvInvestigationPipeline) -> list[dict[str, Any]]:
+    drafts = []
+    for anomaly, plan in pipeline.find_anomalies_with_plans():
+        drafts.append(
+            {
+                "anomaly": anomaly,
+                "classification": plan.classification,
+                "probes": plan.probes,
+                "questions": plan.questions,
+            }
+        )
+    drafts.sort(key=lambda draft: _anomaly_delta(draft["anomaly"]), reverse=True)
+    return drafts
+
+
+def _detailed_detection_payload(
+    pipeline: _LocalCsvInvestigationPipeline,
+    drafts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "connector": pipeline.connector.name,
+        "path": str(pipeline.connector.path),
+        "profile": _csv_profile_to_dict(pipeline.profile),
+        "group_by": pipeline.group_by,
+        "lookback_days": pipeline.lookback_days,
+        "min_cost": pipeline.min_cost,
+        "series_count": pipeline.series_count,
+        "anomaly_count": len(drafts),
+        "anomalies": [_detailed_anomaly_draft(draft) for draft in drafts],
+    }
+
+
+def _summary_detection_payload(
+    pipeline: _LocalCsvInvestigationPipeline,
+    drafts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "connector": pipeline.connector.name,
+        "path": str(pipeline.connector.path),
+        "profile": _csv_profile_to_dict(pipeline.profile),
+        "group_by": pipeline.group_by,
+        "lookback_days": pipeline.lookback_days,
+        "min_cost": pipeline.min_cost,
+        "threshold_pct": pipeline.threshold_pct,
+        "baseline_days": pipeline.baseline_days,
+        "series_count": pipeline.series_count,
+        "anomaly_count": len(drafts),
+        "total_cost": _total_series_cost(pipeline.series),
+        "top_services": _top_services(pipeline.series),
+        "anomalies": [_summary_anomaly_draft(draft) for draft in drafts],
+        "attribution_gaps": _attribution_gaps(pipeline),
+    }
+
+
+def _detailed_anomaly_draft(draft: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "anomaly": anomaly_to_dict(draft["anomaly"]),
+        "classification": sku_classification_to_dict(draft["classification"]),
+        "probes": [discovery_probe_to_dict(probe) for probe in draft["probes"]],
+        "questions": [question_to_dict(question) for question in draft["questions"]],
+    }
+
+
+def _summary_anomaly_draft(draft: dict[str, Any]) -> dict[str, Any]:
+    anomaly: Anomaly = draft["anomaly"]
+    series = anomaly.series
+    probes = draft["probes"]
+    questions = draft["questions"]
+    return {
+        "service": series.service,
+        "sku": series.sku,
+        "project_id": series.project_id,
+        "currency": series.currency,
+        "inflection_date": anomaly.inflection_date,
+        "baseline_cost": anomaly.baseline_cost,
+        "observed_cost": anomaly.observed_cost,
+        "delta_cost": _anomaly_delta(anomaly),
+        "magnitude_pct": anomaly.magnitude_pct,
+        "classification": sku_classification_to_dict(draft["classification"]),
+        "probe_names": [probe.name for probe in probes],
+        "required_probe_count": sum(1 for probe in probes if probe.required),
+        "question_count": len(questions),
+        "blocking_question_count": sum(1 for question in questions if question.blocks_recommendation),
+    }
+
+
+def _csv_profile_to_dict(profile: CsvBillingProfile) -> dict[str, Any]:
+    return {
+        "path": profile.path,
+        "format": profile.format,
+        "row_count": profile.row_count,
+        "item_count": profile.item_count,
+        "grain": profile.grain,
+        "date_range": list(profile.date_range) if profile.date_range else None,
+        "available_fields": list(profile.available_fields),
+        "missing_optional_fields": list(profile.missing_optional_fields),
+        "warnings": list(profile.warnings),
+    }
+
+
+def _top_services(series: tuple[CostSeries, ...] | list[CostSeries], limit: int = 10) -> list[dict[str, Any]]:
+    totals: dict[tuple[str, str | None, str], Decimal] = {}
+    for item in series:
+        key = (item.service, item.project_id, item.currency)
+        totals[key] = totals.get(key, Decimal("0")) + _series_total(item)
+    ranked = sorted(totals.items(), key=lambda item: item[1], reverse=True)[:limit]
+    return [
+        {"service": service, "project_id": project_id, "currency": currency, "cost": cost}
+        for (service, project_id, currency), cost in ranked
+    ]
+
+
+def _total_series_cost(series: tuple[CostSeries, ...] | list[CostSeries]) -> Decimal:
+    return sum((_series_total(item) for item in series), Decimal("0"))
+
+
+def _series_total(series: CostSeries) -> Decimal:
+    return sum((cost for _, cost in series.points), Decimal("0"))
+
+
+def _anomaly_delta(anomaly: Anomaly) -> Decimal:
+    return anomaly.observed_cost - anomaly.baseline_cost
+
+
+def _attribution_gaps(pipeline: _LocalCsvInvestigationPipeline) -> list[str]:
+    gaps = []
+    if "project_id" in pipeline.profile.missing_optional_fields:
+        gaps.append("missing_project")
+    if pipeline.profile.grain in {"service", "mixed"}:
+        gaps.append("missing_sku_for_some_rows")
+    if "credit" in pipeline.profile.missing_optional_fields and "discount" in pipeline.profile.missing_optional_fields:
+        gaps.append("missing_credit_discount")
+    if (
+        "usage_amount" in pipeline.profile.missing_optional_fields
+        or "usage_unit" in pipeline.profile.missing_optional_fields
+    ):
+        gaps.append("missing_usage")
+    return gaps
 
 
 def _build_local_csv_investigation_pipeline(args: argparse.Namespace) -> _LocalCsvInvestigationPipeline:

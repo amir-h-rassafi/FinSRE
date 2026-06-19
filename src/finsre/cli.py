@@ -94,6 +94,7 @@ def _add_investigate_commands(subparsers: argparse._SubParsersAction) -> None:
         cli_commands.investigate_detect,
     )
     _add_csv_feed_args(detect)
+    _add_investigation_args(detect, include_output_options=True)
 
     run = _add_command(
         investigate_sub,
@@ -102,6 +103,7 @@ def _add_investigate_commands(subparsers: argparse._SubParsersAction) -> None:
         cli_commands.investigate_run,
     )
     _add_csv_feed_args(run)
+    _add_investigation_args(run)
     run.add_argument("--approve-llm", action="store_true", help="Explicitly approve sending context to LLM.")
 
 
@@ -206,16 +208,31 @@ def _add_sku_args(parser: argparse.ArgumentParser) -> None:
 def _add_csv_feed_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--path", required=True, help="Path to a local CSV billing feed")
     parser.add_argument("--currency", default="USD", help="Default currency when the CSV has no currency column")
-    parser.add_argument("--threshold-pct", type=float, default=25.0, help="Percent change vs baseline to flag")
-    parser.add_argument("--baseline-days", type=int, default=7, help="Days in the trailing baseline window")
     parser.add_argument("--service-column", help="CSV column containing service name")
     parser.add_argument("--sku-column", help="CSV column containing SKU or resource id")
     parser.add_argument("--sku-description-column", help="CSV column containing SKU description")
     parser.add_argument("--cost-column", help="CSV column containing cost")
+    parser.add_argument("--credit-column", help="CSV column containing credit amount")
+    parser.add_argument("--discount-column", help="CSV column containing discount amount")
+    parser.add_argument("--usage-amount-column", help="CSV column containing usage amount")
+    parser.add_argument("--usage-unit-column", help="CSV column containing usage unit")
+    parser.add_argument("--invoice-month-column", help="CSV column containing invoice month")
     parser.add_argument("--currency-column", help="CSV column containing currency")
     parser.add_argument("--project-column", help="CSV column containing project or account id")
     parser.add_argument("--region-column", help="CSV column containing region or zone")
+    parser.add_argument("--labels-column", help="CSV column containing key=value labels")
+    parser.add_argument("--tags-column", help="CSV column containing key=value tags")
     parser.add_argument("--usage-start-date-column", help="CSV column containing usage start date")
+
+
+def _add_investigation_args(parser: argparse.ArgumentParser, *, include_output_options: bool = False) -> None:
+    parser.add_argument("--threshold-pct", type=float, default=25.0, help="Percent change vs baseline to flag")
+    parser.add_argument("--baseline-days", type=int, default=7, help="Days in the trailing baseline window")
+    parser.add_argument("--lookback-days", type=int, default=90, help="Number of most recent days to analyze")
+    parser.add_argument("--min-cost", type=float, default=0.0, help="Minimum anomaly cost increase to include")
+    parser.add_argument("--group-by", choices=("sku", "service"), default="sku", help="Analyze at SKU or service grain")
+    if include_output_options:
+        parser.add_argument("--full", action="store_true", help="Print the detailed anomaly payload")
 
 
 if __name__ == "__main__":

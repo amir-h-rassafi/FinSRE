@@ -68,6 +68,65 @@ The product should explicitly model how much data is available. This avoids pret
 
 Higher levels make the tool stickier because FinSRE becomes part of the operational feedback loop, not only a reporting layer.
 
+## Product Phases
+
+FinSRE should grow as a multi-purpose FinOps tool, but today's MVP is deliberately CSV-only. Each later phase should produce useful output before the next phase adds more context.
+
+1. Data gathering and normalization
+   - Today: ingest local CSV exports through the CSV connector.
+   - Later: add Billing Export queries, provider APIs, and warehouse queries through the same connector boundary.
+   - Normalize fields that affect cost reasoning: cost, credits, discounts, currency, usage amount/unit, service, SKU, service id, SKU id, account/project, region/zone, labels, tags, invoice month, and source freshness.
+   - Accept feeds at SKU level, service level, project level, workload level, or another available grain, then preserve the original grain as evidence.
+
+2. Aggregation and attribution
+   - Aggregate normalized rows by service, SKU, project/account, region, label, owner, workload, and time window.
+   - Keep drill-down paths from service-level totals back to SKU and source rows.
+   - Mark attribution gaps explicitly, for example missing project, missing owner, missing label, or missing workload mapping.
+
+3. Cold-start billing analytics
+   - Work with billing data alone before assuming inventory, metrics, logs, or code access exists.
+   - Detect anomalies over configurable windows, normally the last 2-3 months when available.
+   - Identify expensive services/SKUs and simple billing-only misalignments, such as unlabeled spend, sustained growth, unused-looking fixed charges, or unexpected egress/storage/logging movement.
+
+4. Context enrichment
+   - Add inventory, metrics, utilization, logs, traces, deployment events, IaC state, and Git/PR metadata when connectors are available.
+   - Use anomaly windows to narrow evidence collection instead of scanning everything.
+   - Correlate cost movement with provider events, utilization changes, deploys, Terraform changes, or code changes near the inflection.
+
+5. Optimization and commercial tracking
+   - Add projections, commitment/discount negotiation support, commitment utilization, and recommendation tracking.
+   - Track whether accepted changes stay on the rails after implementation.
+   - Keep recommendation confidence tied to evidence quality and available data level.
+
+6. Continuous FinOps panel
+   - Persist investigations, recommendations, feedback, ownership, and outcomes.
+   - Support a UI/API later, but keep the CLI useful as the first operations surface.
+
+The current implementation should stay focused on phase 1-3 with CSV data only: normalize billing rows, aggregate them clearly, detect anomalies, classify the affected domain, and plan the next evidence probes.
+
+### CLI Shape
+
+The CLI should expose the same phases without pretending future systems already exist:
+
+```text
+connectors check / preview-csv
+  -> validate and preview available data
+
+gcp billing services / skus
+  -> inspect GCP catalog and pricing metadata; not a cost-history source yet
+
+investigate detect
+  -> normalize cost rows, aggregate series, detect anomalies, and plan evidence probes
+
+discovery classify-sku / plan-sku
+  -> debug SKU/domain routing and required evidence
+
+investigate run --approve-llm
+  -> run the approved LLM investigation path over curated anomaly context
+```
+
+Near-term CLI work should improve `investigate detect` first for CSV: concise summaries, service-level aggregation, configurable lookback windows, minimum-cost filters, and drill-down from service to SKU.
+
 ## System Architecture
 
 The system should be built around normalized events, bounded context, and specialized agents.

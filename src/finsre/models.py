@@ -9,6 +9,9 @@ class CloudProvider(StrEnum):
     GCP = "gcp"
 
 
+SERVICE_TOTAL_SKU = "__service_total__"
+
+
 @dataclass(frozen=True)
 class ConnectorContract:
     """Small compatibility contract for connector outputs.
@@ -76,7 +79,14 @@ class CostLineItem:
     sku_description: str | None = None
     project_id: str | None = None
     region: str | None = None
+    credit: Decimal | None = None
+    discount: Decimal | None = None
+    usage_amount: Decimal | None = None
+    usage_unit: str | None = None
+    invoice_month: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, str] = field(default_factory=dict)
     source: str = ""
     observed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
